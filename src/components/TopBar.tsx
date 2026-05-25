@@ -48,20 +48,20 @@ export function TopBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Regular (non-trackpad) mice only emit deltaY. Translate that into
-  // horizontal scrolling on the tab strip so users can reach hidden tabs
-  // without having to grab the (now hidden) scrollbar.
+  // Route ANY wheel/trackpad delta over the tab strip into horizontal
+  // scroll. macOS trackpad horizontal swipes default to history navigation
+  // in Chromium (we counter that with overscroll-behavior in CSS) and
+  // regular mice only emit deltaY, so the safest thing is to always claim
+  // the event and translate whichever axis the user gave us.
   useEffect(() => {
     const el = tabsRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (el.scrollWidth <= el.clientWidth) return;
-      // Trackpads emit deltaX for horizontal gestures — let the browser
-      // handle those natively. Only intercept vertical-wheel intent.
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
-      }
+      e.preventDefault();
+      const delta =
+        Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      el.scrollLeft += delta;
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);

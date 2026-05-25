@@ -485,6 +485,10 @@
   -webkit-app-region: no-drag !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
+  /* Critical on macOS: without `contain` here, a two-finger horizontal
+     trackpad swipe gets eaten by Chromium's history-navigation gesture
+     and never reaches the scroll container. */
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
