@@ -176,13 +176,10 @@ export function TopBar({
               className={`aya-tab ${isActive ? "aya-tab--active" : ""} ${
                 isDragging ? "aya-tab--dragging" : ""
               } ${dropClass}`}
-              // Inline style as a last-resort cascade override. CSS rules
-              // with (0,3,0) specificity + !important weren't taking effect
-              // for some reason (tabs were squashing below 120px), so we
-              // force the flex sizing directly on the element. Wins over
-              // any non-!important CSS regardless of source.
+              // Keep this in sync with the CSS fallback below. Tabs grow to
+              // fill spare room, shrink to 120px, then overflow the strip.
               style={{
-                flex: "0 1 240px",
+                flex: "1 1 240px",
                 minWidth: 120,
                 maxWidth: 320,
               }}

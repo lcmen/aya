@@ -460,15 +460,12 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* Higher-specificity selector + !important because the previous form was
-   apparently being overridden somewhere in the cascade — user reported
-   tabs squashed below 120px (scrollWidth == clientWidth) which means
-   neither min-width nor flex-shrink behavior was taking effect. */
+/* Higher-specificity selector + !important so the design handoff's base tab
+   sizing cannot collapse the runtime project tabs. */
 .aya-topbar .aya-tabs .aya-tab {
-  /* Base 240px (the design's natural width). Don't grow into empty space
-     (flex-grow:0). DO shrink (flex-shrink:1) but only down to min-width.
-     Anything beyond min triggers genuine overflow → scrollWidth > clientWidth. */
-  flex: 0 1 240px !important;
+  /* Base 240px (the design's natural width). Grow into spare room when only
+     a few projects are open, shrink to min-width, then overflow the strip. */
+  flex: 1 1 240px !important;
   min-width: 120px !important;
   max-width: 320px !important;
 }
@@ -480,12 +477,19 @@
    sets overflow: hidden on .aya-tabs and we need to be sure our auto wins. */
 .aya-topbar {
   -webkit-app-region: no-drag !important;
+  min-width: 0;
 }
 .aya-brand {
   -webkit-app-region: drag !important;
+  flex: 0 0 92px;
+  white-space: nowrap;
 }
 .aya-tabs {
   -webkit-app-region: no-drag !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   /* Critical on macOS: without `contain` here, a two-finger horizontal
@@ -513,7 +517,7 @@
    right side (settings gear) — it must stay reachable no matter how many
    project tabs there are. */
 .aya-tab-new {
-  flex-shrink: 0;
+  flex: 0 0 36px;
 }
 .aya-topbar-right {
   flex-shrink: 0;
