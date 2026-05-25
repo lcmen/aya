@@ -6,7 +6,7 @@
 // PATH (mise, asdf, brew, etc.) is respected — otherwise we'd miss
 // binaries installed via version managers.
 
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 export interface HarnessDef {
   /** Canonical id; used as the preset id when seeded. */
@@ -79,21 +79,45 @@ export const KNOWN_HARNESSES: readonly HarnessDef[] = [
     color: "#ff7b72",
     command: "crush",
   },
+  {
+    id: "qwen-code",
+    binary: "qwen-code",
+    name: "Qwen Code",
+    icon: "Q",
+    color: "#615ced",
+    command: "qwen-code",
+  },
+  {
+    id: "kilo",
+    binary: "kilo",
+    name: "Kilo Code",
+    icon: "K",
+    color: "#f97316",
+    command: "kilo",
+  },
+  {
+    id: "pi",
+    binary: "pi",
+    name: "Pi",
+    icon: "π",
+    color: "#7c3aed",
+    command: "pi",
+  },
 ];
 
-/** Filter the binary name through a strict allow-list before interpolating
- *  into the shell. Defense against accidentally executing shell metachars
- *  if the KNOWN_HARNESSES list ever picks up a weird entry. */
-function safeBinaryName(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_.-]/g, "");
+/** Strict allow-list for binary tokens passed to `command -v`. Harnesses are
+ *  hard-coded today, but keeping this explicit prevents a future dynamic list
+ *  from accidentally smuggling shell syntax into the PATH probe. */
+export function isSafeBinaryName(s: string): boolean {
+  return /^[a-zA-Z0-9_.-]+$/.test(s);
 }
 
 async function commandExists(binary: string): Promise<boolean> {
-  const safe = safeBinaryName(binary);
-  if (!safe) return false;
+  if (!isSafeBinaryName(binary)) return false;
   return new Promise((resolve) => {
-    exec(
-      `/bin/bash -lc 'command -v ${safe} >/dev/null 2>&1'`,
+    execFile(
+      "/bin/bash",
+      ["-lc", `command -v -- ${binary} >/dev/null 2>&1`],
       { timeout: 2500, windowsHide: true },
       (err) => resolve(err === null),
     );
