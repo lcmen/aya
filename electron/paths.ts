@@ -13,10 +13,13 @@ import * as path from "node:path";
 
 export const IS_DEV = process.env.AYA_DEV === "1";
 
-export const AYA_HOME = path.join(
-  os.homedir(),
-  IS_DEV ? ".aya-dev" : ".aya",
-);
+// AYA_HOME env var lets you point a single launch at an arbitrary config
+// directory (e.g. /tmp/aya-demo for screenshots, or a per-task scratch dir).
+// When unset we fall back to the dev/prod split.
+export const AYA_HOME =
+  process.env.AYA_HOME && process.env.AYA_HOME.trim()
+    ? path.resolve(process.env.AYA_HOME)
+    : path.join(os.homedir(), IS_DEV ? ".aya-dev" : ".aya");
 
 export const PROJECTS_DIR = path.join(AYA_HOME, "projects");
 export const PRESETS_FILE = path.join(AYA_HOME, "presets.json");
