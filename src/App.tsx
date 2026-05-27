@@ -28,6 +28,7 @@ import {
   presetSlug,
   type ProjectCollectionState,
   type ProjectConfig,
+  type SplitLayout,
   type TerminalState,
   type Theme,
   type ThemeColors,
@@ -136,6 +137,173 @@ function uniquePresetId(existing: Preset[], project: ProjectConfig, preset: Pres
   return candidate;
 }
 
+const MAX_SPLIT_ROWS = 5;
+const MAX_SPLIT_COLS = 5;
+
+function normalizeSplitLayoutForTabs(
+  layout: SplitLayout | undefined,
+  tabs: WorkingTab[],
+  fallbackId: string | null,
+): SplitLayout {
+  const tabIds = new Set(tabs.map((tab) => tab.id));
+  if (!layout) {
+    return {
+      rows: 1,
+      cols: 1,
+      rowFr: [1],
+      colFr: [1],
+      cells: [fallbackId && tabIds.has(fallbackId) ? fallbackId : (tabs[0]?.id ?? null)],
+      activeCell: 0,
+    };
+  }
+  const rows = Math.max(1, Math.min(MAX_SPLIT_ROWS, layout.rows));
+  const cols = Math.max(1, Math.min(MAX_SPLIT_COLS, layout.cols));
+  const size = rows * cols;
+  const rowFr = layout.rowFr.slice(0, rows);
+  const colFr = layout.colFr.slice(0, cols);
+  while (rowFr.length < rows) rowFr.push(1);
+  while (colFr.length < cols) colFr.push(1);
+  const seenCells = new Set<string>();
+  const cells = Array.from({ length: size }, (_, idx) => {
+    const value = layout.cells[idx];
+    if (!value || !tabIds.has(value) || seenCells.has(value)) return null;
+    seenCells.add(value);
+    return value;
+  });
+  if (!cells.some(Boolean)) {
+    cells[0] = fallbackId && tabIds.has(fallbackId) ? fallbackId : (tabs[0]?.id ?? null);
+  }
+  return {
+    rows,
+    cols,
+    rowFr,
+    colFr,
+    cells,
+    activeCell: Math.max(0, Math.min(size - 1, layout.activeCell)),
+  };
+}
+
+function singleTerminalLayout(terminalId: string | null): SplitLayout {
+  return {
+    rows: 1,
+    cols: 1,
+    rowFr: [1],
+    colFr: [1],
+    cells: [terminalId],
+    activeCell: 0,
+  };
+}
+
+function compactSplitLayout(layout: SplitLayout): SplitLayout | undefined {
+  const assigned = layout.cells.filter(Boolean).length;
+  if (assigned === 0) return undefined;
+  if (layout.rows === 1 && layout.cols === 1 && assigned <= 1) return undefined;
+  return layout;
+}
+
+function pruneEmptySplitTracks(layout: SplitLayout): SplitLayout {
+  let rows = layout.rows;
+  let cols = layout.cols;
+  let rowFr = [...layout.rowFr];
+  let colFr = [...layout.colFr];
+  let cells = [...layout.cells];
+  let activeCell = layout.activeCell;
+
+  for (let row = rows - 1; row >= 0 && rows > 1; row -= 1) {
+    const rowCells = cells.slice(row * cols, row * cols + cols);
+    if (rowCells.some(Boolean)) continue;
+    cells.splice(row * cols, cols);
+    rowFr.splice(row, 1);
+    rows -= 1;
+    const activeRow = Math.floor(activeCell / cols);
+    const activeCol = activeCell % cols;
+    activeCell =
+      activeRow > row
+        ? (activeRow - 1) * cols + activeCol
+        : Math.min(activeCell, rows * cols - 1);
+  }
+
+  for (let col = cols - 1; col >= 0 && cols > 1; col -= 1) {
+    let empty = true;
+    for (let row = 0; row < rows; row += 1) {
+      if (cells[row * cols + col]) {
+        empty = false;
+        break;
+      }
+    }
+    if (!empty) continue;
+    const nextCells: (string | null)[] = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let currentCol = 0; currentCol < cols; currentCol += 1) {
+        if (currentCol !== col) nextCells.push(cells[row * cols + currentCol]);
+      }
+    }
+    const activeRow = Math.floor(activeCell / cols);
+    const activeCol = activeCell % cols;
+    colFr.splice(col, 1);
+    cols -= 1;
+    cells = nextCells;
+    activeCell =
+      activeCol > col
+        ? activeRow * cols + activeCol - 1
+        : Math.min(activeRow * cols + Math.min(activeCol, cols - 1), rows * cols - 1);
+  }
+
+  activeCell = Math.max(0, Math.min(rows * cols - 1, activeCell));
+  return { rows, cols, rowFr, colFr, cells, activeCell };
+}
+
+function splitOffset(values: number[], index: number): number {
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const before = values.slice(0, index + 1).reduce((sum, value) => sum + value, 0);
+  return total > 0 ? (before / total) * 100 : 0;
+}
+
+function SplitResizeHandle({
+  axis,
+  index,
+  colFr,
+  rowFr,
+  onResize,
+}: {
+  axis: "col" | "row";
+  index: number;
+  colFr: number[];
+  rowFr: number[];
+  onResize: (deltaPx: number, totalPx: number) => void;
+}) {
+  const offset = splitOffset(axis === "col" ? colFr : rowFr, index);
+  return (
+    <div
+      className={`aya-split-resize aya-split-resize--${axis}`}
+      style={axis === "col" ? { left: `${offset}%` } : { top: `${offset}%` }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        const host = event.currentTarget.parentElement;
+        if (!host) return;
+        const rect = host.getBoundingClientRect();
+        const start = axis === "col" ? event.clientX : event.clientY;
+        const total = axis === "col" ? rect.width : rect.height;
+        let lastDelta = 0;
+        const move = (moveEvent: MouseEvent) => {
+          const current = axis === "col" ? moveEvent.clientX : moveEvent.clientY;
+          const delta = current - start;
+          onResize(delta - lastDelta, total);
+          lastDelta = delta;
+        };
+        const up = () => {
+          window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", up);
+          document.body.style.cursor = "";
+        };
+        document.body.style.cursor = axis === "col" ? "col-resize" : "row-resize";
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+      }}
+    />
+  );
+}
+
 /** Default display name for a freshly-created tab. Uses the preset's name
  *  so renaming a preset in Settings shows up on the next launch. */
 function defaultTabName(preset: Preset): string {
@@ -159,6 +327,9 @@ export function App() {
   const [terminals, setTerminals] = useState<Record<string, TerminalState>>({});
   const [projectEvents, setProjectEvents] = useState<ProjectEvent[]>([]);
   const [activeTabByProject, setActiveTabByProject] = useState<
+    Record<string, string | null>
+  >({});
+  const [singleViewByProject, setSingleViewByProject] = useState<
     Record<string, string | null>
   >({});
   const [git, setGit] = useState<Record<string, GitInfo>>({});
@@ -628,12 +799,51 @@ export function App() {
       const tabs: WorkingTab[] = Object.values(nextTerminals)
         .filter((t) => t.projectSlug === slug)
         .map((t) => ({ id: t.id, presetId: t.presetId, name: t.name }));
-      const updated: ProjectConfig = { ...project, tabs };
+      const splitLayout = project.splitLayout
+        ? compactSplitLayout(
+            pruneEmptySplitTracks(
+              normalizeSplitLayoutForTabs(project.splitLayout, tabs, tabs[0]?.id ?? null),
+            ),
+          )
+        : undefined;
+      const updated: ProjectConfig = {
+        ...project,
+        tabs,
+        ...(splitLayout ? { splitLayout } : { splitLayout: undefined }),
+      };
       setAllProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
       setProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
       void window.aya.updateProject(updated);
     },
     [],
+  );
+
+  const updateProjectSplitLayout = useCallback(
+    (slug: string, updater: (layout: SplitLayout, project: ProjectConfig) => SplitLayout) => {
+      const project = projectsRef.current.find((p) => p.slug === slug);
+      if (!project) return;
+      const fallbackId = activeTabByProject[slug] ?? project.tabs[0]?.id ?? null;
+      const current = normalizeSplitLayoutForTabs(project.splitLayout, project.tabs, fallbackId);
+      const normalized = normalizeSplitLayoutForTabs(
+        updater(current, project),
+        project.tabs,
+        fallbackId,
+      );
+      const splitLayout = compactSplitLayout(normalized);
+      const updated: ProjectConfig = {
+        ...project,
+        ...(splitLayout ? { splitLayout } : { splitLayout: undefined }),
+      };
+      setSingleViewByProject((prev) => ({ ...prev, [slug]: null }));
+      setAllProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
+      setProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
+      void window.aya.updateProject(updated);
+      const activeTerminalId = normalized.cells[normalized.activeCell];
+      if (activeTerminalId) {
+        setActiveTabByProject((prev) => ({ ...prev, [slug]: activeTerminalId }));
+      }
+    },
+    [activeTabByProject],
   );
 
   /** Resolve the effective cwd for a project at terminal-launch time. Honors
@@ -666,7 +876,32 @@ export function App() {
       };
       setTerminals((prev) => {
         const next = { ...prev, [id]: term };
-        persistProject(slug, next);
+        const tabs: WorkingTab[] = Object.values(next)
+          .filter((t) => t.projectSlug === slug)
+          .map((t) => ({ id: t.id, presetId: t.presetId, name: t.name }));
+        const currentLayout = project.splitLayout
+          ? normalizeSplitLayoutForTabs(
+              project.splitLayout,
+              tabs,
+              activeTabByProject[slug] ?? project.tabs[0]?.id ?? null,
+            )
+          : null;
+        const splitLayout = currentLayout
+          ? compactSplitLayout({
+              ...currentLayout,
+              cells: currentLayout.cells.map((cell, idx) =>
+                idx === currentLayout.activeCell ? id : cell === id ? null : cell,
+              ),
+            })
+          : undefined;
+        const updated: ProjectConfig = {
+          ...project,
+          tabs,
+          ...(splitLayout ? { splitLayout } : { splitLayout: undefined }),
+        };
+        setAllProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
+        setProjects((ps) => ps.map((p) => (p.slug === slug ? updated : p)));
+        void window.aya.updateProject(updated);
         return next;
       });
       setActiveTabByProject((prev) => ({ ...prev, [slug]: id }));
@@ -678,7 +913,7 @@ export function App() {
         detail: preset.command,
       });
     },
-    [appendProjectEvent, persistProject, effectiveCwd],
+    [activeTabByProject, appendProjectEvent, effectiveCwd],
   );
 
   const closeTerminal = useCallback(
@@ -729,16 +964,192 @@ export function App() {
     [persistProject],
   );
 
-  const selectTerminal = useCallback((id: string) => {
-    const t = terminalsRef.current[id];
-    if (!t) return;
-    setActiveTabByProject((prev) => ({ ...prev, [t.projectSlug]: id }));
+  const assignTerminalToActiveSplitCell = useCallback((id: string) => {
+    const terminal = terminalsRef.current[id];
+    if (!terminal) return;
+    setActiveTabByProject((prev) => ({ ...prev, [terminal.projectSlug]: id }));
+      updateProjectSplitLayout(terminal.projectSlug, (layout) => {
+        const cells = layout.cells.map((cell) => (cell === id ? null : cell));
+        cells[layout.activeCell] = id;
+        return { ...layout, cells };
+      });
+  }, [updateProjectSplitLayout]);
+
+  const assignTerminalToSplitCell = useCallback(
+    (id: string, cellIndex: number) => {
+      const terminal = terminalsRef.current[id];
+      if (!terminal) return;
+      setSingleViewByProject((prev) => ({ ...prev, [terminal.projectSlug]: null }));
+      setActiveTabByProject((prev) => ({ ...prev, [terminal.projectSlug]: id }));
+      updateProjectSplitLayout(terminal.projectSlug, (layout) => {
+        const cells = layout.cells.map((cell) => (cell === id ? null : cell));
+        const target = Math.max(0, Math.min(cells.length - 1, cellIndex));
+        cells[target] = id;
+        return { ...layout, cells, activeCell: target };
+      });
+    },
+    [updateProjectSplitLayout],
+  );
+
+  const collapseToSingleTerminal = useCallback((terminal: TerminalState) => {
+    setActiveTabByProject((prev) => ({ ...prev, [terminal.projectSlug]: terminal.id }));
+    setSingleViewByProject((prev) => ({
+      ...prev,
+      [terminal.projectSlug]: terminal.id,
+    }));
     setTerminals((prev) => {
-      const cur = prev[id];
+      const cur = prev[terminal.id];
       if (!cur || !cur.bell) return prev;
-      return { ...prev, [id]: { ...cur, bell: false } };
+      return { ...prev, [terminal.id]: { ...cur, bell: false } };
     });
   }, []);
+
+  const selectTerminalFromSidebar = useCallback(
+    (id: string) => {
+      const terminal = terminalsRef.current[id];
+      if (!terminal) return;
+      const project = projectsRef.current.find((p) => p.slug === terminal.projectSlug);
+      if (!project) return;
+      const layout = normalizeSplitLayoutForTabs(
+        project.splitLayout,
+        project.tabs,
+        activeTabByProject[project.slug] ?? project.tabs[0]?.id ?? null,
+      );
+      const visibleCell = layout.cells.indexOf(id);
+      if (project.splitLayout && visibleCell >= 0) {
+        setSingleViewByProject((prev) => ({ ...prev, [project.slug]: null }));
+        updateProjectSplitLayout(project.slug, (current) => ({
+          ...current,
+          activeCell: visibleCell,
+        }));
+        setActiveTabByProject((prev) => ({ ...prev, [project.slug]: id }));
+        return;
+      }
+      collapseToSingleTerminal(terminal);
+    },
+    [activeTabByProject, collapseToSingleTerminal, updateProjectSplitLayout],
+  );
+
+  const addTerminalSplit = useCallback(
+    (id: string, direction: "right" | "below") => {
+      const terminal = terminalsRef.current[id];
+      if (!terminal) return;
+      setSingleViewByProject((prev) => ({ ...prev, [terminal.projectSlug]: null }));
+      setActiveTabByProject((prev) => ({ ...prev, [terminal.projectSlug]: id }));
+      updateProjectSplitLayout(terminal.projectSlug, (layout) => {
+        const activeRow = Math.floor(layout.activeCell / layout.cols);
+        const activeCol = layout.activeCell % layout.cols;
+        if (direction === "right" && layout.cols >= MAX_SPLIT_COLS) return layout;
+        if (direction === "below" && layout.rows >= MAX_SPLIT_ROWS) return layout;
+
+        if (direction === "right") {
+          const cols = layout.cols + 1;
+          const cells: (string | null)[] = [];
+          for (let row = 0; row < layout.rows; row += 1) {
+            for (let col = 0; col < cols; col += 1) {
+              if (row === activeRow && col === activeCol + 1) {
+                cells.push(id);
+              } else {
+                const oldCol = col > activeCol ? col - 1 : col;
+                const value = oldCol < layout.cols ? layout.cells[row * layout.cols + oldCol] : null;
+                cells.push(value === id ? null : value);
+              }
+            }
+          }
+          return {
+            rows: layout.rows,
+            cols,
+            rowFr: layout.rowFr,
+            colFr: [
+              ...layout.colFr.slice(0, activeCol + 1),
+              layout.colFr[activeCol] ?? 1,
+              ...layout.colFr.slice(activeCol + 1),
+            ],
+            cells,
+            activeCell: activeRow * cols + activeCol + 1,
+          };
+        }
+
+        const rows = layout.rows + 1;
+        const cells: (string | null)[] = [];
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < layout.cols; col += 1) {
+            if (row === activeRow + 1 && col === activeCol) {
+              cells.push(id);
+            } else {
+              const oldRow = row > activeRow ? row - 1 : row;
+              const value = oldRow < layout.rows ? layout.cells[oldRow * layout.cols + col] : null;
+              cells.push(value === id ? null : value);
+            }
+          }
+        }
+        return {
+          rows,
+          cols: layout.cols,
+          rowFr: [
+            ...layout.rowFr.slice(0, activeRow + 1),
+            layout.rowFr[activeRow] ?? 1,
+            ...layout.rowFr.slice(activeRow + 1),
+          ],
+          colFr: layout.colFr,
+          cells,
+          activeCell: (activeRow + 1) * layout.cols + activeCol,
+        };
+      });
+    },
+    [updateProjectSplitLayout],
+  );
+
+  const removeTerminalFromSplit = useCallback(
+    (id: string) => {
+      const terminal = terminalsRef.current[id];
+      if (!terminal) return;
+      updateProjectSplitLayout(terminal.projectSlug, (layout) => {
+        const cells = layout.cells.map((cell) => (cell === id ? null : cell));
+        const activeCell =
+          cells[layout.activeCell] === null
+            ? Math.max(0, cells.findIndex(Boolean))
+            : layout.activeCell;
+        return pruneEmptySplitTracks({
+          ...layout,
+          cells,
+          activeCell: activeCell < 0 ? 0 : activeCell,
+        });
+      });
+    },
+    [updateProjectSplitLayout],
+  );
+
+  const setActiveSplitCell = useCallback(
+    (slug: string, cellIndex: number) => {
+      setSingleViewByProject((prev) => ({ ...prev, [slug]: null }));
+      updateProjectSplitLayout(slug, (layout) => ({
+        ...layout,
+        activeCell: Math.max(0, Math.min(layout.cells.length - 1, cellIndex)),
+      }));
+    },
+    [updateProjectSplitLayout],
+  );
+
+  const resizeSplit = useCallback(
+    (slug: string, axis: "col" | "row", index: number, deltaPx: number, totalPx: number) => {
+      updateProjectSplitLayout(slug, (layout) => {
+        const values = axis === "col" ? [...layout.colFr] : [...layout.rowFr];
+        if (index < 0 || index >= values.length - 1 || totalPx <= 0) return layout;
+        const totalFr = values.reduce((sum, value) => sum + value, 0);
+        const deltaFr = (deltaPx / totalPx) * totalFr;
+        const min = 0.18;
+        const left = Math.max(min, values[index] + deltaFr);
+        const right = Math.max(min, values[index + 1] - deltaFr);
+        values[index] = left;
+        values[index + 1] = right;
+        return axis === "col"
+          ? { ...layout, colFr: values }
+          : { ...layout, rowFr: values };
+      });
+    },
+    [updateProjectSplitLayout],
+  );
 
   /** Reorder project tabs. Persists the new slug order to disk so a
    *  restart preserves the user's choice. */
@@ -828,7 +1239,12 @@ export function App() {
       for (const t of owned) delete next[t.id];
       return next;
     });
-    setActiveTabByProject((prev) => {
+      setActiveTabByProject((prev) => {
+        const next = { ...prev };
+        delete next[slug];
+        return next;
+      });
+    setSingleViewByProject((prev) => {
       const next = { ...prev };
       delete next[slug];
       return next;
@@ -1140,6 +1556,48 @@ export function App() {
     : null;
   const activeTerminal = activeTabId ? (terminals[activeTabId] ?? null) : null;
   const activeGit = activeProjectId ? (git[activeProjectId] ?? null) : null;
+  const savedSplitLayout =
+    activeProject && activeProjectId
+      ? normalizeSplitLayoutForTabs(
+          activeProject.splitLayout,
+          activeProject.tabs,
+          activeTabId,
+        )
+      : null;
+  const singleViewTerminalId =
+    activeProjectId && singleViewByProject[activeProjectId] && terminals[singleViewByProject[activeProjectId]!]
+      ? singleViewByProject[activeProjectId]
+      : null;
+  const splitLayout =
+    savedSplitLayout && singleViewTerminalId
+      ? singleTerminalLayout(singleViewTerminalId)
+      : (savedSplitLayout ??
+          (activeTabId ? singleTerminalLayout(activeTabId) : null));
+  const isSplit =
+    !!splitLayout &&
+    !singleViewTerminalId &&
+    !!activeProject?.splitLayout &&
+    (splitLayout.rows > 1 ||
+      splitLayout.cols > 1 ||
+      splitLayout.cells.filter(Boolean).length > 1);
+  const splitAssignments: Record<string, number> = {};
+  if (savedSplitLayout && activeProject?.splitLayout) {
+    savedSplitLayout.cells.forEach((terminalId, index) => {
+      if (terminalId) splitAssignments[terminalId] = index;
+    });
+  }
+  const visibleTerminalIds = splitLayout
+    ? splitLayout.cells.filter((id): id is string => !!id && !!terminals[id])
+    : activeTabId
+      ? [activeTabId]
+      : [];
+  const visibleTerminalIdSet = new Set(visibleTerminalIds);
+  const hiddenTerminals = Object.values(terminals).filter(
+    (terminal) => !visibleTerminalIdSet.has(terminal.id),
+  );
+  const assignableProjectTerminals = projectTerminals.filter(
+    (terminal) => !visibleTerminalIdSet.has(terminal.id),
+  );
 
   const projectBadges: Record<
     string,
@@ -1335,7 +1793,8 @@ export function App() {
             sidebarWidth={sidebarWidth}
             presets={presets}
             recentlyActiveIds={recentlyActiveIds}
-            onSelect={selectTerminal}
+            splitAssignments={splitAssignments}
+            onSelect={selectTerminalFromSidebar}
             onClose={closeTerminal}
             onRename={renameTerminal}
             onLaunch={launchTerminal}
@@ -1346,13 +1805,108 @@ export function App() {
               }
             }}
             onRestart={forceRestartTerminal}
+            onAssignToSplit={assignTerminalToActiveSplitCell}
+            onSplitRight={(id) => addTerminalSplit(id, "right")}
+            onSplitBelow={(id) => addTerminalSplit(id, "below")}
+            onRemoveFromSplit={removeTerminalFromSplit}
           />
-          <div className="aya-panes">
-            {Object.values(terminals).map((t) => {
-              const preset = getPreset(presets, t.presetId);
+          <div
+            className={`aya-panes ${isSplit ? "aya-panes--split" : ""}`}
+            style={
+              splitLayout
+                ? {
+                    gridTemplateColumns: splitLayout.colFr.map((fr) => `${fr}fr`).join(" "),
+                    gridTemplateRows: splitLayout.rowFr.map((fr) => `${fr}fr`).join(" "),
+                  }
+                : undefined
+            }
+          >
+            {splitLayout?.cells.map((terminalId, cellIndex) => {
+              const terminal = terminalId ? terminals[terminalId] : null;
+              if (!terminal) {
+                return (
+                  <div
+                    key={`empty-${cellIndex}`}
+                    className={`aya-pane aya-pane-empty ${
+                      splitLayout.activeCell === cellIndex ? "aya-pane-empty--active" : ""
+                    }`}
+                    onClick={() => {
+                      if (!activeProjectId) return;
+                      setActiveSplitCell(activeProjectId, cellIndex);
+                    }}
+                  >
+                    <div className="aya-pane-header">
+                      <span className="aya-pane-header-title">Empty pane</span>
+                    </div>
+                    <div className="aya-pane-empty-body">
+                      {assignableProjectTerminals.length === 0 ? (
+                        <div className="aya-pane-empty-hint">No hidden terminals</div>
+                      ) : (
+                        <div className="aya-pane-empty-list">
+                          {assignableProjectTerminals.map((candidate) => {
+                            const preset = getPreset(presets, candidate.presetId);
+                            return (
+                              <button
+                                key={candidate.id}
+                                className="aya-pane-empty-terminal"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  assignTerminalToSplitCell(candidate.id, cellIndex);
+                                }}
+                              >
+                                <span
+                                  className="aya-sidebar-icon"
+                                  style={preset.color ? { color: preset.color } : undefined}
+                                >
+                                  {preset.icon}
+                                </span>
+                                <span>{candidate.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              const preset = getPreset(presets, terminal.presetId);
               // Per-preset theme override (set in Settings) wins over the
               // global active theme. Missing override → fall back to the
               // default the user picked. Missing theme entirely → fallback.
+              const overrideTheme = preset.themeId
+                ? themes.find((th) => th.id === preset.themeId)
+                : null;
+              const colorsForTerminal: ThemeColors =
+                overrideTheme?.colors ?? activeThemeColors;
+              return (
+                <TerminalView
+                  key={terminal.id}
+                  terminal={terminal}
+                  preset={preset}
+                  command={preset.command}
+                  isVisible
+                  cwd={terminal.cwd}
+                  lastActivity={lastActivityRef.current[terminal.id]}
+                  fontSize={fontSize}
+                  themeColors={colorsForTerminal}
+                  findOpen={findInPaneFor === terminal.id}
+                  onCloseFind={() => setFindInPaneFor(null)}
+                  onOpenSettings={() => setShowSettings(true)}
+                  onCloseProject={closeProject}
+                  onRequestRestart={() => restartTerminal(terminal.id)}
+                  restartTrigger={restartTriggers[terminal.id] ?? 0}
+                  isActivePane={isSplit && splitLayout.activeCell === cellIndex}
+                  onActivatePane={() =>
+                    activeProjectId && setActiveSplitCell(activeProjectId, cellIndex)
+                  }
+                  enableWebgl={!isSplit}
+                />
+              );
+            })}
+            {hiddenTerminals.map((t) => {
+              const preset = getPreset(presets, t.presetId);
               const overrideTheme = preset.themeId
                 ? themes.find((th) => th.id === preset.themeId)
                 : null;
@@ -1364,20 +1918,47 @@ export function App() {
                   terminal={t}
                   preset={preset}
                   command={preset.command}
-                  isVisible={t.id === activeTabId}
+                  isVisible={false}
                   cwd={t.cwd}
                   lastActivity={lastActivityRef.current[t.id]}
                   fontSize={fontSize}
                   themeColors={colorsForTerminal}
-                  findOpen={findInPaneFor === t.id}
+                  findOpen={false}
                   onCloseFind={() => setFindInPaneFor(null)}
                   onOpenSettings={() => setShowSettings(true)}
                   onCloseProject={closeProject}
                   onRequestRestart={() => restartTerminal(t.id)}
                   restartTrigger={restartTriggers[t.id] ?? 0}
+                  enableWebgl={!isSplit}
                 />
               );
             })}
+            {splitLayout && splitLayout.cols > 1 && activeProjectId &&
+              Array.from({ length: splitLayout.cols - 1 }, (_, index) => (
+                <SplitResizeHandle
+                  key={`col-resize-${index}`}
+                  axis="col"
+                  index={index}
+                  colFr={splitLayout.colFr}
+                  rowFr={splitLayout.rowFr}
+                  onResize={(delta, total) =>
+                    resizeSplit(activeProjectId, "col", index, delta, total)
+                  }
+                />
+              ))}
+            {splitLayout && splitLayout.rows > 1 && activeProjectId &&
+              Array.from({ length: splitLayout.rows - 1 }, (_, index) => (
+                <SplitResizeHandle
+                  key={`row-resize-${index}`}
+                  axis="row"
+                  index={index}
+                  colFr={splitLayout.colFr}
+                  rowFr={splitLayout.rowFr}
+                  onResize={(delta, total) =>
+                    resizeSplit(activeProjectId, "row", index, delta, total)
+                  }
+                />
+              ))}
             {projectTerminals.length === 0 && activeProject && (
               <div className="aya-pane">
                 <div className="aya-pane-header">

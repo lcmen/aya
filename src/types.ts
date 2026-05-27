@@ -62,11 +62,21 @@ export interface WorkingTab {
   name: string;
 }
 
+export interface SplitLayout {
+  rows: number;
+  cols: number;
+  rowFr: number[];
+  colFr: number[];
+  cells: (string | null)[];
+  activeCell: number;
+}
+
 export interface ProjectConfig {
   slug: string;
   name: string;
   directory: string;
   tabs: WorkingTab[];
+  splitLayout?: SplitLayout;
 }
 
 export interface RepoProjectConfig {

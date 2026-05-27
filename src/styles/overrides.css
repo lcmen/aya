@@ -847,7 +847,8 @@
 
 /* `.aya-pane-active` is rendered always but only the active pane should show
    the top accent bar in single-pane mode. We hide it unless inside a split. */
-.aya-panes:not(.aya-panes--split) .aya-pane-active { display: none; }
+.aya-pane-active { display: none; }
+.aya-pane--active-split .aya-pane-active { display: block; }
 
 /* The design's `--running` dot has a forever-pulse animation. We only want it
    to pulse while output is actively streaming, otherwise it's restless noise.

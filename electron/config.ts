@@ -10,7 +10,7 @@ import {
   PROJECTS_ORDER_FILE,
   PROJECTS_STATE_FILE,
 } from "./paths";
-import type { ProjectCollectionState, ProjectConfig } from "./types";
+import type { ProjectCollectionState, ProjectConfig, SplitLayout } from "./types";
 
 const RESERVED_SLUGS = new Set(["aya-sentinel-new"]);
 
@@ -49,6 +49,54 @@ function stringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((s) => typeof s === "string")
     ? value
     : null;
+}
+
+function numberArray(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter(
+    (n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0,
+  );
+}
+
+export function normalizeSplitLayout(
+  raw: unknown,
+  tabIds: Set<string>,
+): SplitLayout | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined;
+  }
+  const r = raw as Record<string, unknown>;
+  const rows =
+    typeof r.rows === "number" && Number.isInteger(r.rows)
+      ? Math.max(1, Math.min(5, r.rows))
+      : 1;
+  const cols =
+    typeof r.cols === "number" && Number.isInteger(r.cols)
+      ? Math.max(1, Math.min(5, r.cols))
+      : 1;
+  const size = rows * cols;
+  const rowFr = (numberArray(r.rowFr) ?? []).slice(0, rows);
+  const colFr = (numberArray(r.colFr) ?? []).slice(0, cols);
+  while (rowFr.length < rows) rowFr.push(1);
+  while (colFr.length < cols) colFr.push(1);
+  const rawCells = Array.isArray(r.cells) ? r.cells : [];
+  const seenCells = new Set<string>();
+  const cells = Array.from({ length: size }, (_, idx) => {
+    const value = rawCells[idx];
+    if (typeof value !== "string" || !tabIds.has(value) || seenCells.has(value)) {
+      return null;
+    }
+    seenCells.add(value);
+    return value;
+  });
+  const activeCell =
+    typeof r.activeCell === "number" && Number.isInteger(r.activeCell)
+      ? Math.max(0, Math.min(size - 1, r.activeCell))
+      : 0;
+  const assigned = cells.filter(Boolean).length;
+  if (assigned === 0) return undefined;
+  if (rows === 1 && cols === 1 && assigned <= 1) return undefined;
+  return { rows, cols, rowFr, colFr, cells, activeCell };
 }
 
 async function loadStringArrayFile(filePath: string): Promise<string[] | null> {
@@ -130,11 +178,16 @@ export async function listProjects(): Promise<ProjectConfig[]> {
         .filter(
           (t): t is NonNullable<ReturnType<typeof normalizeTab>> => t !== null,
         );
+      const splitLayout = normalizeSplitLayout(
+        data.splitLayout,
+        new Set(tabs.map((tab) => tab.id)),
+      );
       out.push({
         slug,
         name: data.name,
         directory: data.directory,
         tabs,
+        ...(splitLayout ? { splitLayout } : {}),
       });
     } catch {
       // Skip invalid JSON; don't crash the app.
@@ -204,6 +257,7 @@ function toDisk(project: ProjectConfig): unknown {
     name: project.name,
     directory: project.directory,
     tabs: project.tabs,
+    ...(project.splitLayout ? { splitLayout: project.splitLayout } : {}),
   };
 }
 

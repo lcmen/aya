@@ -1,6 +1,7 @@
 import type {
   ProjectCollectionState,
   ProjectConfig,
+  SplitLayout,
   SpawnRequest,
   Theme,
   ThemesFile,
@@ -63,16 +64,58 @@ function validateWorkingTab(value: unknown, name: string): WorkingTab {
   };
 }
 
+function optionalNumberArray(value: unknown, name: string): number[] {
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    !value.every((n) => typeof n === "number" && Number.isFinite(n) && n > 0)
+  ) {
+    fail(name, "positive number[]");
+  }
+  return value;
+}
+
+function validateSplitLayout(value: unknown): SplitLayout {
+  if (!isRecord(value)) fail("projects:update.splitLayout", "SplitLayout object");
+  const rows = requirePositiveInt(value.rows, "projects:update.splitLayout.rows");
+  const cols = requirePositiveInt(value.cols, "projects:update.splitLayout.cols");
+  if (rows > 5) fail("projects:update.splitLayout.rows", "integer <= 5");
+  if (cols > 5) fail("projects:update.splitLayout.cols", "integer <= 5");
+  const size = rows * cols;
+  const cellsValue = value.cells;
+  if (
+    !Array.isArray(cellsValue) ||
+    !cellsValue.every((cell) => cell === null || typeof cell === "string")
+  ) {
+    fail("projects:update.splitLayout.cells", "(string|null)[]");
+  }
+  const cells = cellsValue.slice(0, size);
+  while (cells.length < size) cells.push(null);
+  const rowFr = optionalNumberArray(value.rowFr, "projects:update.splitLayout.rowFr").slice(0, rows);
+  const colFr = optionalNumberArray(value.colFr, "projects:update.splitLayout.colFr").slice(0, cols);
+  while (rowFr.length < rows) rowFr.push(1);
+  while (colFr.length < cols) colFr.push(1);
+  const activeCell =
+    typeof value.activeCell === "number" && Number.isInteger(value.activeCell)
+      ? Math.max(0, Math.min(size - 1, value.activeCell))
+      : 0;
+  return { rows, cols, rowFr, colFr, cells, activeCell };
+}
+
 export function validateProjectConfig(value: unknown): ProjectConfig {
   if (!isRecord(value)) fail("projects:update", "ProjectConfig object");
   if (!Array.isArray(value.tabs)) fail("projects:update.tabs", "WorkingTab[]");
+  const tabs = value.tabs.map((tab, idx) =>
+    validateWorkingTab(tab, `projects:update.tabs[${idx}]`),
+  );
   return {
     slug: requireString(value.slug, "projects:update.slug"),
     name: requireString(value.name, "projects:update.name"),
     directory: requireString(value.directory, "projects:update.directory"),
-    tabs: value.tabs.map((tab, idx) =>
-      validateWorkingTab(tab, `projects:update.tabs[${idx}]`),
-    ),
+    tabs,
+    ...(value.splitLayout !== undefined
+      ? { splitLayout: validateSplitLayout(value.splitLayout) }
+      : {}),
   };
 }
 

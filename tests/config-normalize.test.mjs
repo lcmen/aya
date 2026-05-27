@@ -9,7 +9,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { normalizeTab } from "../dist-electron/config.js";
+import { normalizeSplitLayout, normalizeTab } from "../dist-electron/config.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -61,6 +61,117 @@ test("rejects non-object input", () => {
   assert.equal(normalizeTab(undefined), null);
   assert.equal(normalizeTab("string"), null);
   assert.equal(normalizeTab(42), null);
+});
+
+test("normalizes split layout and drops unknown terminal ids", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 2,
+      cols: 3,
+      rowFr: [2, 1],
+      colFr: [1, 2, 1],
+      cells: ["a", "missing", null, "b"],
+      activeCell: 4,
+    },
+    new Set(["a", "b"]),
+  );
+  assert.deepEqual(out, {
+    rows: 2,
+    cols: 3,
+    rowFr: [2, 1],
+    colFr: [1, 2, 1],
+    cells: ["a", null, null, "b", null, null],
+    activeCell: 4,
+  });
+});
+
+test("normalizes split layout dimensions, tracks, cells, and active cell", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 9,
+      cols: 0,
+      rowFr: [2, -1, 0, Number.NaN, 3, 4],
+      colFr: ["bad"],
+      cells: ["a"],
+      activeCell: 999,
+    },
+    new Set(["a"]),
+  );
+  assert.deepEqual(out, {
+    rows: 5,
+    cols: 1,
+    rowFr: [2, 3, 4, 1, 1],
+    colFr: [1],
+    cells: ["a", null, null, null, null],
+    activeCell: 4,
+  });
+});
+
+test("split layout removes duplicate terminal assignments", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 2,
+      cols: 2,
+      rowFr: [1, 1],
+      colFr: [1, 1],
+      cells: ["a", "a", "b", "b"],
+      activeCell: 0,
+    },
+    new Set(["a", "b"]),
+  );
+  assert.deepEqual(out?.cells, ["a", null, "b", null]);
+});
+
+test("split layout pads missing track sizes and cells", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 2,
+      cols: 3,
+      rowFr: [3],
+      colFr: [2],
+      cells: ["a"],
+      activeCell: -10,
+    },
+    new Set(["a"]),
+  );
+  assert.deepEqual(out, {
+    rows: 2,
+    cols: 3,
+    rowFr: [3, 1],
+    colFr: [2, 1, 1],
+    cells: ["a", null, null, null, null, null],
+    activeCell: 0,
+  });
+});
+
+test("split layout with no live terminals compacts away", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 2,
+      cols: 2,
+      rowFr: [1, 1],
+      colFr: [1, 1],
+      cells: ["missing"],
+      activeCell: 0,
+    },
+    new Set(["a"]),
+  );
+  assert.equal(out, undefined);
+});
+
+test("single-cell split layout compacts away", () => {
+  const out = normalizeSplitLayout(
+    {
+      rows: 1,
+      cols: 1,
+      rowFr: [1],
+      colFr: [1],
+      cells: ["a"],
+      activeCell: 0,
+    },
+    new Set(["a"]),
+  );
+  assert.equal(out, undefined);
 });
 
 test("migrates project order/open files into projects-state.json", async () => {

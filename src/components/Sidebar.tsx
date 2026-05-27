@@ -19,6 +19,11 @@ interface Props {
   onReorder: (orderedIds: string[]) => void;
   /** Kill + re-spawn the PTY for this terminal (right-click → Restart). */
   onRestart: (id: string) => void;
+  splitAssignments?: Record<string, number>;
+  onAssignToSplit: (id: string) => void;
+  onSplitRight: (id: string) => void;
+  onSplitBelow: (id: string) => void;
+  onRemoveFromSplit: (id: string) => void;
 }
 
 /** "Agent is waiting for input" indicator — small red dot, the same shape
@@ -40,6 +45,11 @@ export function Sidebar({
   onResize,
   onReorder,
   onRestart,
+  splitAssignments = {},
+  onAssignToSplit,
+  onSplitRight,
+  onSplitBelow,
+  onRemoveFromSplit,
 }: Props) {
   // Right-click context menu state. Positioned at the cursor; closes on
   // outside click, Esc, or after the user picks an item.
@@ -239,6 +249,11 @@ export function Sidebar({
                 </span>
               )}
               {t.bell && <BellIcon />}
+              {splitAssignments[t.id] !== undefined && (
+                <span className="aya-sidebar-pane-chip">
+                  {splitAssignments[t.id] + 1}
+                </span>
+              )}
               <span
                 className="aya-sidebar-close"
                 onClick={(e) => {
@@ -303,6 +318,44 @@ export function Sidebar({
           >
             Restart terminal
           </button>
+          <button
+            className="aya-context-menu-item"
+            onClick={() => {
+              onAssignToSplit(menu.terminalId);
+              setMenu(null);
+            }}
+          >
+            Show in active pane
+          </button>
+          <button
+            className="aya-context-menu-item"
+            onClick={() => {
+              onSplitRight(menu.terminalId);
+              setMenu(null);
+            }}
+          >
+            Split right
+          </button>
+          <button
+            className="aya-context-menu-item"
+            onClick={() => {
+              onSplitBelow(menu.terminalId);
+              setMenu(null);
+            }}
+          >
+            Split below
+          </button>
+          {splitAssignments[menu.terminalId] !== undefined && (
+            <button
+              className="aya-context-menu-item"
+              onClick={() => {
+                onRemoveFromSplit(menu.terminalId);
+                setMenu(null);
+              }}
+            >
+              Remove from split
+            </button>
+          )}
           <button
             className="aya-context-menu-item aya-context-menu-item--danger"
             onClick={() => {

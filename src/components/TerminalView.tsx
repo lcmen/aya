@@ -35,6 +35,9 @@ interface Props {
   /** Bumped by App when the user right-clicks → Restart on this terminal.
    *  The component reuses its xterm instance and spawns a fresh PTY. */
   restartTrigger: number;
+  isActivePane?: boolean;
+  onActivatePane?: () => void;
+  enableWebgl?: boolean;
 }
 
 /** Our internal ThemeColors shape is a superset of xterm.js's ITheme. This
@@ -94,6 +97,9 @@ export function TerminalView({
   onPtyData,
   onRequestRestart,
   restartTrigger,
+  isActivePane = false,
+  onActivatePane,
+  enableWebgl = true,
 }: Props) {
   const lastActivityLabel = lastActivity ? formatLastActivity(lastActivity) : null;
   const headerStatusText = terminal.externalStatus?.text ?? lastActivityLabel;
@@ -210,6 +216,7 @@ export function TerminalView({
     // Electron, but possible if the user disabled hardware acceleration).
     // We catch and fall through to the DOM renderer in that case.
     try {
+      if (!enableWebgl) throw new Error("WebGL disabled for split panes");
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
         // Browser dropped the WebGL context (tab backgrounded for too long
@@ -391,6 +398,17 @@ export function TerminalView({
   }, [terminal.id]);
 
   useEffect(() => {
+    if (enableWebgl || !webglRef.current) return;
+    try {
+      webglRef.current.dispose();
+    } catch {
+      /* ignore */
+    }
+    webglRef.current = null;
+    repairTerminalRender(false);
+  }, [enableWebgl, repairTerminalRender]);
+
+  useEffect(() => {
     if (!isVisible) return;
     repairTerminalRender(true);
     const frame = requestAnimationFrame(() => repairTerminalRender(true));
@@ -490,9 +508,12 @@ export function TerminalView({
   return (
     <div
       className={
-        isScrollbarHidden ? "aya-pane aya-pane--scrollbar-hidden" : "aya-pane"
+        `aya-pane ${isScrollbarHidden ? "aya-pane--scrollbar-hidden" : ""} ${
+          isActivePane ? "aya-pane--active-split" : ""
+        }`
       }
       style={{ display: isVisible ? "flex" : "none" }}
+      onMouseDown={onActivatePane}
     >
       <div className="aya-pane-active" />
       <div className="aya-pane-header">

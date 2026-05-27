@@ -58,8 +58,17 @@ test("validateProjectConfig accepts project tabs and rejects bad tab shapes", ()
     name: "Aya",
     directory: "/tmp/aya",
     tabs: [{ id: "t1", presetId: "shell", name: "Shell" }],
+    splitLayout: {
+      rows: 1,
+      cols: 2,
+      rowFr: [1],
+      colFr: [1, 2],
+      cells: ["t1", null],
+      activeCell: 0,
+    },
   });
   assert.equal(project.tabs[0].presetId, "shell");
+  assert.deepEqual(project.splitLayout?.colFr, [1, 2]);
 
   assert.throws(
     () =>
@@ -70,6 +79,60 @@ test("validateProjectConfig accepts project tabs and rejects bad tab shapes", ()
         tabs: [{ id: "t1", presetId: "shell" }],
       }),
     /tabs\[0\]\.name/,
+  );
+});
+
+test("validateProjectConfig rejects invalid split layout payloads", () => {
+  const base = {
+    slug: "aya",
+    name: "Aya",
+    directory: "/tmp/aya",
+    tabs: [{ id: "t1", presetId: "shell", name: "Shell" }],
+  };
+  assert.throws(
+    () =>
+      validateProjectConfig({
+        ...base,
+        splitLayout: {
+          rows: 6,
+          cols: 1,
+          rowFr: [1],
+          colFr: [1],
+          cells: ["t1"],
+          activeCell: 0,
+        },
+      }),
+    /splitLayout\.rows/,
+  );
+  assert.throws(
+    () =>
+      validateProjectConfig({
+        ...base,
+        splitLayout: {
+          rows: 1,
+          cols: 2,
+          rowFr: [1],
+          colFr: [1, 1],
+          cells: ["t1", 42],
+          activeCell: 0,
+        },
+      }),
+    /splitLayout\.cells/,
+  );
+  assert.throws(
+    () =>
+      validateProjectConfig({
+        ...base,
+        splitLayout: {
+          rows: 1,
+          cols: 2,
+          rowFr: [1],
+          colFr: [1, -1],
+          cells: ["t1", null],
+          activeCell: 0,
+        },
+      }),
+    /splitLayout\.colFr/,
   );
 });
 
