@@ -56,18 +56,19 @@ jobs:
       # ~/.cache/electron download cache during npm ci, which makes electron's
       # own postinstall skip extraction and never write path.txt. Force a clean
       # re-extract and fail loudly if path.txt is still missing.
-      # On this runner electron's install.js needs force_no_cache to actually
-      # extract dist/, and even then it does not write node_modules/electron/
-      # path.txt - the pointer Playwright's electron.launch reads via
-      # require('electron'). So: force the extract, then write path.txt ourselves
-      # if still missing (Linux-only job -> the binary is dist/electron), and
-      # validate that require('electron') resolves to an existing file. No
-      # `|| true`: a real installer failure must surface, not be masked.
+      # electron is recorded with hasInstallScript:false in the lockfile, so
+      # `npm ci` never downloads its binary. Clear any stale cache and run
+      # `npm rebuild electron`, which executes electron's install script to
+      # download + extract dist/. Write path.txt if the installer still omits it
+      # (Linux job -> binary is dist/electron), then validate require('electron')
+      # resolves to a real file. Diagnostics print on the way for fast triage.
       - name: Ensure Electron binary
         run: |
-          rm -rf node_modules/electron/dist node_modules/electron/path.txt
-          force_no_cache=true node node_modules/electron/install.js
+          env | grep -i '^ELECTRON' || echo "(no ELECTRON_* env)"
+          rm -rf node_modules/electron/dist node_modules/electron/path.txt ~/.cache/electron
+          npm rebuild electron
           [ -f node_modules/electron/path.txt ] || printf 'electron' > node_modules/electron/path.txt
+          ls -la node_modules/electron/dist 2>/dev/null | head
           node -e "const fs=require('fs'); const e=require('electron'); if (typeof e!=='string' || !fs.existsSync(e)) throw new Error('electron binary missing: '+e); console.log('electron ->', e)"
 
       # Electron on Linux CI needs the Chromium system libraries plus a virtual
