@@ -64,11 +64,11 @@ jobs:
       # resolves to a real file. Diagnostics print on the way for fast triage.
       - name: Ensure Electron binary
         run: |
-          env | grep -i '^ELECTRON' || echo "(no ELECTRON_* env)"
           rm -rf node_modules/electron/dist node_modules/electron/path.txt ~/.cache/electron
-          npm rebuild electron
+          DEBUG='@electron/get:*' force_no_cache=true node node_modules/electron/install.js 2>&1 | tail -60 || echo "INSTALL EXIT $?"
+          echo "=== dist contents ==="
+          ls -laR node_modules/electron/dist 2>/dev/null | head -40 || echo "NO DIST"
           [ -f node_modules/electron/path.txt ] || printf 'electron' > node_modules/electron/path.txt
-          ls -la node_modules/electron/dist 2>/dev/null | head
           node -e "const fs=require('fs'); const e=require('electron'); if (typeof e!=='string' || !fs.existsSync(e)) throw new Error('electron binary missing: '+e); console.log('electron ->', e)"
 
       # Electron on Linux CI needs the Chromium system libraries plus a virtual
