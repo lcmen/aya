@@ -56,16 +56,17 @@ jobs:
       # ~/.cache/electron download cache during npm ci, which makes electron's
       # own postinstall skip extraction and never write path.txt. Force a clean
       # re-extract and fail loudly if path.txt is still missing.
+      # install.js extracts dist/ on the runner but does not reliably write
+      # node_modules/electron/path.txt (the pointer Playwright's electron.launch
+      # reads). Run it to extract, then write path.txt ourselves - on Linux the
+      # binary lives at dist/electron, so the file's content is just "electron".
       - name: Ensure Electron binary
         run: |
           rm -rf node_modules/electron/dist node_modules/electron/path.txt
-          # force_no_cache makes @electron/get re-download instead of reusing a
-          # cache entry that install-app-deps may have left in a form electron's
-          # own installer won't extract.
-          force_no_cache=true node node_modules/electron/install.js
-          ls -la node_modules/electron/
-          test -f node_modules/electron/path.txt
-          echo "electron path.txt -> $(cat node_modules/electron/path.txt)"
+          node node_modules/electron/install.js || true
+          [ -f node_modules/electron/path.txt ] || printf 'electron' > node_modules/electron/path.txt
+          test -x node_modules/electron/dist/electron
+          echo "electron binary OK; path.txt -> $(cat node_modules/electron/path.txt)"
 
       # Electron on Linux CI needs the Chromium system libraries plus a virtual
       # X server. install-deps pulls the shared libs; xvfb-run provides the display.
