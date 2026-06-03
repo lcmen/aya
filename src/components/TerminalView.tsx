@@ -11,8 +11,27 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Preset, Snippet, TerminalState, ThemeColors } from "../types";
+import { focusReportingState } from "../focus-reporting";
+import { enterKeyAction, META_ENTER } from "../terminal-keys";
 import { snippetPtyPayload } from "../snippet-payload";
 import { SnippetBar } from "./SnippetBar";
+
+// Terminal sizing + timing constants. The fallback cols/rows are the standard
+// 80x24 a PTY gets before xterm has measured the pane (used at every spawn).
+const TERMINAL_FALLBACK_COLS = 80;
+const TERMINAL_FALLBACK_ROWS = 24;
+// Lines of scrollback xterm keeps in memory per terminal.
+const SCROLLBACK_LINES = 10_000;
+// Wheel-scroll easing: ~8 frames at 60Hz — smooth without feeling sluggish.
+const SMOOTH_SCROLL_DURATION_MS = 125;
+// Delay before re-fitting/repainting a freshly-shown terminal, giving xterm a
+// beat to finish measuring after a visibility/layout change.
+const RENDER_REPAIR_DELAY_MS = 80;
+// Retry delay for focusing the active terminal once it's done measuring.
+const FOCUS_RETRY_DELAY_MS = 60;
+// How long to keep showing "Restoring sessions…" before assuming the replay
+// arrived (or there was nothing to replay).
+const RESTORE_FALLBACK_MS = 2_500;
 
 interface Props {
   terminal: TerminalState;
@@ -124,6 +143,9 @@ export function TerminalView({
   const searchRef = useRef<SearchAddon | null>(null);
   const webglRef = useRef<WebglAddon | null>(null);
   const spawnedRef = useRef(false);
+  // True while a full-screen/rich TUI (claude, codex, vim…) is running, detected
+  // via focus-reporting mode (DECSET 1004). Gates the Shift+Enter soft newline.
+  const richInputRef = useRef(false);
   const fitFrameRef = useRef<number | null>(null);
   const replayingOutputRef = useRef(0);
   const [findQuery, setFindQuery] = useState("");
@@ -220,7 +242,7 @@ export function TerminalView({
       window.setTimeout(() => {
         refresh();
         fitTerminal(shouldFocus);
-      }, 80);
+      }, RENDER_REPAIR_DELAY_MS);
     },
     [fitTerminal],
   );
@@ -259,13 +281,13 @@ export function TerminalView({
       fontSize,
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: SCROLLBACK_LINES,
       // Animate between row positions on wheel scroll instead of snapping
       // one row at a time per tick. Terminal grids are inherently row-
       // quantized, but the snap is what reads as "choppy" when you flick
       // the trackpad. 125ms is about 8 frames at 60Hz: noticeable easing
       // without feeling sluggish.
-      smoothScrollDuration: 125,
+      smoothScrollDuration: SMOOTH_SCROLL_DURATION_MS,
       // Option-as-Meta so Option+B / Option+F / Option+Backspace send the
       // ESC-prefixed sequences readline (zsh, bash, claude, codex) expects
       // for backward-word / forward-word / delete-word. Without this, macOS
@@ -298,12 +320,17 @@ export function TerminalView({
     xtermRef.current = term;
     fitRef.current = fit;
     searchRef.current = search;
+
     fitTerminal();
 
     const unsubscribe = window.aya.onPtyEvent((event) => {
       if (event.ptyId !== terminal.id) return;
       setIsRestoring(false);
       if (event.type === "data") {
+        // Track whether a full-screen / rich TUI (claude, codex, vim…) is
+        // running via focus-reporting mode (DECSET 1004). It gates Shift+Enter:
+        // soft newline inside the TUI, plain Enter (submit) at the shell prompt.
+        richInputRef.current = focusReportingState(event.chunk, richInputRef.current);
         if (event.replay) {
           replayingOutputRef.current += 1;
           term.write(event.chunk, () => {
@@ -327,33 +354,49 @@ export function TerminalView({
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== "keydown") return true;
 
-      // Shift+Enter on a cleanly-exited terminal: restart in the same pane.
-      // Returning false from this handler stops xterm from forwarding the
-      // key to the (now-defunct) PTY.
-      if (
-        ev.key === "Enter" &&
-        ev.shiftKey &&
-        !ev.metaKey &&
-        !ev.ctrlKey &&
-        !ev.altKey &&
-        canRestartRef.current
-      ) {
-        ev.preventDefault();
-        const t = xtermRef.current;
-        if (!t) return false;
-        t.writeln("\x1b[2m[restarting...]\x1b[0m");
-        onRequestRestart?.();
-        void window.aya.ptySpawn({
-        ptyId: terminal.id,
-        projectSlug: terminal.projectSlug,
-        presetId: terminal.presetId,
-        command: commandRef.current,
-        cwd: cwdRef.current,
-          cols: Math.max(t.cols, 80),
-          rows: Math.max(t.rows, 24),
+      // Enter handling (restart / soft newline / submit) — see enterKeyAction.
+      // Returning false stops xterm from also forwarding its default CR.
+      if (ev.key === "Enter") {
+        const action = enterKeyAction({
+          shift: ev.shiftKey,
+          meta: ev.metaKey,
+          ctrl: ev.ctrlKey,
+          alt: ev.altKey,
+          canRestart: canRestartRef.current,
+          richInput: richInputRef.current,
         });
-        canRestartRef.current = false;
-        return false;
+        if (action === "restart") {
+          // Shift+Enter on a cleanly-exited terminal: restart in the same pane.
+          ev.preventDefault();
+          const t = xtermRef.current;
+          if (!t) return false;
+          t.writeln("\x1b[2m[restarting...]\x1b[0m");
+          onRequestRestart?.();
+          void window.aya.ptySpawn({
+            ptyId: terminal.id,
+            projectSlug: terminal.projectSlug,
+            presetId: terminal.presetId,
+            command: commandRef.current,
+            cwd: cwdRef.current,
+            cols: Math.max(t.cols, TERMINAL_FALLBACK_COLS),
+            rows: Math.max(t.rows, TERMINAL_FALLBACK_ROWS),
+          });
+          canRestartRef.current = false;
+          return false;
+        }
+        if (action === "soft-newline" || action === "submit") {
+          // Shift/Option+Enter: a newline inside a running rich TUI (focus-
+          // reporting on), a plain submit at the shell — xterm's default is
+          // wrong for both (it submits Shift+Enter; macOptionIsMeta turns
+          // Option+Enter into a zsh multiline edit).
+          ev.preventDefault();
+          void window.aya.ptyWrite(
+            terminal.id,
+            action === "soft-newline" ? META_ENTER : "\r",
+          );
+          return false;
+        }
+        // "default" → fall through to xterm's normal Enter.
       }
 
       // Option+Arrow / Option+Backspace word navigation. xterm.js's default
@@ -438,8 +481,8 @@ export function TerminalView({
         presetId: terminal.presetId,
         command,
         cwd,
-        cols: Math.max(cols, 80),
-        rows: Math.max(rows, 24),
+        cols: Math.max(cols, TERMINAL_FALLBACK_COLS),
+        rows: Math.max(rows, TERMINAL_FALLBACK_ROWS),
       });
     }
 
@@ -491,7 +534,7 @@ export function TerminalView({
     // fit can't swallow it.
     repairTerminalRender(false);
     const frame = requestAnimationFrame(() => repairTerminalRender(false));
-    const timer = setTimeout(() => repairTerminalRender(false), 80);
+    const timer = setTimeout(() => repairTerminalRender(false), RENDER_REPAIR_DELAY_MS);
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(timer);
@@ -521,7 +564,7 @@ export function TerminalView({
     // measuring right after a visibility/layout change.
     focusNow();
     const raf = requestAnimationFrame(focusNow);
-    const timer = setTimeout(focusNow, 60);
+    const timer = setTimeout(focusNow, FOCUS_RETRY_DELAY_MS);
     return () => {
       cancelAnimationFrame(raf);
       clearTimeout(timer);
@@ -595,14 +638,14 @@ export function TerminalView({
       presetId: terminal.presetId,
       command: commandRef.current,
       cwd: cwdRef.current,
-      cols: Math.max(term.cols, 80),
-      rows: Math.max(term.rows, 24),
+      cols: Math.max(term.cols, TERMINAL_FALLBACK_COLS),
+      rows: Math.max(term.rows, TERMINAL_FALLBACK_ROWS),
     });
   }, [restartTrigger, terminal.id]);
 
   useEffect(() => {
     setIsRestoring(true);
-    const id = window.setTimeout(() => setIsRestoring(false), 2500);
+    const id = window.setTimeout(() => setIsRestoring(false), RESTORE_FALLBACK_MS);
     return () => window.clearTimeout(id);
   }, [terminal.id]);
 
