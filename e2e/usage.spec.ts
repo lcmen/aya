@@ -45,3 +45,28 @@ test.describe("without a usage snapshot", () => {
     ).toHaveCount(0);
   });
 });
+
+test.describe("with a Codex rollout", () => {
+  // Codex usage comes from its local rollout (no hook/token). Seed one with a
+  // rate_limits event; the Codex chip should render its weekly percent.
+  test.use({
+    seedOptions: {
+      codexRateLimits: {
+        primary: { used_percent: 12, window_minutes: 300, resets_at: 1780523078 },
+        secondary: { used_percent: 40, window_minutes: 10080, resets_at: 1780851308 },
+      },
+    },
+  });
+
+  test("Codex chip shows the weekly percent and its own popover", async ({
+    window,
+  }) => {
+    const chip = window.getByRole("button", {
+      name: /codex usage, account-wide/i,
+    });
+    await expect(chip).toBeVisible();
+    await expect(chip).toContainText("40%");
+    await chip.click();
+    await expect(window.getByText("Codex — account-wide")).toBeVisible();
+  });
+});

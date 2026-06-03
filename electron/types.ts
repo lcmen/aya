@@ -168,6 +168,8 @@ export interface AyaApi {
   /** Read-only account-wide usage snapshot a user hook writes (null if none).
    *  Aya never fetches it — see electron/usage.ts. */
   getUsage(): Promise<UsageData | null>;
+  /** Read-only Codex usage parsed from its local rollout logs (null if none). */
+  getCodexUsage(): Promise<UsageData | null>;
 
   // Optional usage-hook installer (writes ~/.claude/settings.json + a fetch
   // script). The Aya process never reads a token or calls the endpoint.
