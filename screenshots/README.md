@@ -1,6 +1,15 @@
 # Screenshots
 
-`main.png` is referenced from the project README. To regenerate it with
+`hero.png` is the image referenced from the project README. It is a
+vertical stack of `main.png` (the workspace) above `snippets-drawer.png`
+(the snippets drawer open). Both shots share the same width, so stacking
+needs no padding. Built with:
+
+```sh
+magick main.png snippets-drawer.png -append hero.png
+```
+
+To regenerate the source shots `main.png` / `snippets-drawer.png` with
 mocked data (no real project names or paths from your machine):
 
 ```sh

@@ -8,6 +8,12 @@
     "name": "Chris Hasiński",
     "email": "krzysztof.hasinski@gmail.com"
   },
+  "contributors": [
+    {
+      "name": "Justyna Wojtczak",
+      "email": "justine84@gmail.com"
+    }
+  ],
   "main": "dist-electron/main.js",
   "type": "commonjs",
   "scripts": {
