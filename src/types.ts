@@ -45,6 +45,13 @@ export interface UsageData {
   updatedAt: string;
 }
 
+/** State of the optional usage-hook installer (mirrors electron/usage-hook.ts). */
+export interface UsageHookStatus {
+  installed: boolean;
+  scriptPath: string;
+  settingsPath: string;
+}
+
 export interface ThemeColors {
   background: string;
   foreground: string;
@@ -219,6 +226,10 @@ export interface AyaApi {
 
   /** Read-only account-wide usage snapshot (null when no hook has written it). */
   getUsage(): Promise<UsageData | null>;
+
+  usageHookStatus(): Promise<UsageHookStatus>;
+  installUsageHook(): Promise<UsageHookStatus>;
+  uninstallUsageHook(): Promise<UsageHookStatus>;
 
   listThemes(): Promise<ThemesFile>;
   saveThemes(file: ThemesFile): Promise<void>;

@@ -28,17 +28,27 @@ Expected shape (anything else is ignored and the chip hides):
 `pct` is 0–100 (percent used). `resetsAt` is optional. If `updatedAt` is older
 than 15 minutes the chip dims and shows "stale".
 
-## Wiring it up (optional, your responsibility)
+## Easiest: the Settings toggle
 
-The official `/usage` data comes from an **undocumented** endpoint
-(`https://api.anthropic.com/api/oauth/usage`) — the same one Claude Code's
-`/usage` command calls. Using it programmatically is **unsupported** (it may
-change or break without notice) and is **your own decision** for your own
-account. Aya neither ships nor endorses the fetch; it only reads the file.
+**Settings → Claude usage chip → Enable.** A dialog spells out exactly what it
+does; on confirm, Aya writes the fetch script and a `Stop` hook into your
+`~/.claude/settings.json` (merged safely — your other hooks are untouched).
+**Disable** removes both. That's the whole setup.
 
-A clean way to populate the file is a throttled Claude Code **hook** that fetches
-on an event (e.g. `Stop`) and writes the file. The hook runs in your shell, with
-your token — Aya is not involved.
+Crucial trust boundary: the **Aya process never reads your token and never calls
+the endpoint.** It only writes the script and reads the resulting file. The
+token read + the network call happen later, in that script, run by Claude Code.
+
+The data comes from an **undocumented** endpoint
+(`https://api.anthropic.com/api/oauth/usage`) — the same one `/usage` calls.
+Using it programmatically is **unsupported** and is **your own decision** for
+your own account; that's why enabling is explicit and reversible.
+
+## Or wire it manually (your responsibility)
+
+Prefer not to let Aya touch `~/.claude`? Set it up yourself. A throttled Claude
+Code **hook** that fetches on `Stop` and writes the file works well — it runs in
+your shell, with your token, Aya not involved.
 
 `~/bin/aya-usage-hook.sh` (macOS — token from Keychain):
 
