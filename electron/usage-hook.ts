@@ -16,7 +16,13 @@ import * as path from "node:path";
 import { writeFileAtomic } from "./atomic-write";
 import { AYA_HOME, USAGE_FILE } from "./paths";
 
-const CLAUDE_SETTINGS_FILE = path.join(os.homedir(), ".claude", "settings.json");
+// Claude Code's global settings. AYA_CLAUDE_SETTINGS overrides it so tests can
+// run the install/uninstall round-trip against a throwaway file instead of the
+// real ~/.claude/settings.json.
+const CLAUDE_SETTINGS_FILE =
+  process.env.AYA_CLAUDE_SETTINGS && process.env.AYA_CLAUDE_SETTINGS.trim()
+    ? path.resolve(process.env.AYA_CLAUDE_SETTINGS)
+    : path.join(os.homedir(), ".claude", "settings.json");
 // The generated fetch script lives in Aya's own dir (always exists), referenced
 // by absolute path from the hook entry.
 export const HOOK_SCRIPT_FILE = path.join(AYA_HOME, "aya-usage-hook.sh");
