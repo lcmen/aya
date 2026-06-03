@@ -3,15 +3,6 @@
 // reload that slice, so an edit made by hand while Aya is running isn't
 // quietly overwritten by the next save the app makes.
 //
-// Two things make this trickier than it sounds:
-//   1. Aya writes these files itself, so a simple watcher would also fire on
-//      our own saves and reload over and over. config-echo remembers a hash of
-//      what we wrote; if a change matches our last write, we know it's our own
-//      save and ignore it.
-//   2. An atomic write creates a temp file and renames it, so a single save
-//      can fire several raw events. We wait a moment (debounce) per slice,
-//      ignore anything that isn't one of our watched files, then read once.
-//
 // We watch the AYA_HOME folder rather than the files themselves: the rename
 // done by an atomic write replaces the file, and a watch on the file itself
 // would lose track of it. The folder is watched non-recursively (recursive
@@ -27,8 +18,7 @@ import { sliceForFilename } from "./config-watcher-pure";
 import { AYA_HOME } from "./paths";
 import type { ConfigSlice } from "./types";
 
-// A single save can fire a burst of file events (the temp file, the rename,
-// plus some editors writing twice). Wait a moment so it becomes one reload.
+// A single save can fire a burst of file events, wait a moment so it becomes one reload.
 const WATCH_DEBOUNCE_MS = 200;
 
 /** Start watching AYA_HOME and send "config:changed" to the renderer when a
@@ -43,15 +33,11 @@ export function startConfigWatcher(win: BrowserWindow): () => void {
     try {
       content = await fs.readFile(filePath, "utf-8");
     } catch {
-      // If we can't read the file right now, ignore it; the next save syncs it.
+      // If we can't read the file right now, ignore it; the next save will sync it.
       return;
     }
     if (isEcho(filePath, content)) return;
-    // Update the saved hash to the content we're about to send the renderer,
-    // so it tracks what the renderer was last given to load, not just what the
-    // app itself wrote. Without this, putting the file back to its previous
-    // content (an editor undo, a git checkout) would still match the old hash,
-    // be mistaken for our own save, get ignored, and then overwritten next save.
+    // Keep track what values the renderer was last given to distinguish in-app and manual edits.
     recordWrite(filePath, content);
     if (!win.isDestroyed()) win.webContents.send("config:changed", { slice });
   };
@@ -73,15 +59,12 @@ export function startConfigWatcher(win: BrowserWindow): () => void {
   };
 
   try {
-    // The folder gets created on first write anyway, but make sure it exists
-    // now so the watcher can always attach. Otherwise a brand-new install would
-    // error here before the app has written its first config file.
     mkdirSync(AYA_HOME, { recursive: true });
     watcher = watch(AYA_HOME, { persistent: false }, (_event, filename) =>
       handle(typeof filename === "string" ? filename : null),
     );
   } catch {
-    // Not fatal: we just won't watch for outside edits this session.
+    // Ignore outside edits causing exceptions.
   }
 
   return () => {

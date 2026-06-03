@@ -23,8 +23,6 @@ export const WATCHED_CONFIG_FILES: Readonly<Record<string, ConfigSlice>> = {
 export function sliceForFilename(filename: string): ConfigSlice | null {
   // Use hasOwn instead of a plain lookup: a plain lookup would also find
   // built-in keys like "constructor" or "toString" and return a function.
-  // That function is truthy, so the `?? null` and the caller's `if (!slice)`
-  // checks would let it through, and functions can't be sent over IPC anyway.
   return Object.hasOwn(WATCHED_CONFIG_FILES, filename)
     ? WATCHED_CONFIG_FILES[filename]
     : null;

@@ -484,15 +484,11 @@ export function App() {
     };
   }, []);
 
-  // Reload config when something outside the app edits one of the user-editable
-  // files under ~/.aya/ while Aya is running. Without this, an edit made by hand
-  // to snippets/presets/themes.json would be overwritten by the next save in the
-  // app. We reload the same cleaned-up form we'd get after our own save, so the
-  // state in memory can't drift away from what's on disk.
+  // Reload config when one of the user-editable files under ~/.aya/ is edited while
+  // Aya is running. Without this, an edit made by hand to snippets/presets/themes.json
+  // would be overwritten by the next save in the app
   useEffect(() => {
     return window.aya.onConfigChange(({ slice }) => {
-      // A file being edited by hand is often invalid JSON for a moment, so the
-      // loader rejects it; keep the current state until the file parses again.
       if (slice === "snippets") {
         void window.aya
           .listSnippets()
