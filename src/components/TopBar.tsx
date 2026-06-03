@@ -6,6 +6,10 @@ const TAB_MIN_WIDTH_PX = 120;
 const TAB_MAX_WIDTH_PX = 320;
 // A usage snapshot older than this means the hook stopped writing — dim it.
 const USAGE_STALE_AFTER_MS = 15 * 60 * 1000;
+// Usage-chip palette: Aya's muted text and panel border (each used a few times
+// in the chip below). The single Claude-brand accent is inlined at its one use.
+const CHIP_MUTED_COLOR = "#8b949e";
+const CHIP_BORDER_COLOR = "#30363d";
 
 function isUsageStale(u: UsageData): boolean {
   const t = Date.parse(u.updatedAt);
@@ -42,7 +46,7 @@ function UsageRow({ label, win }: { label: string; win: UsageWindow }) {
           alignItems: "baseline",
         }}
       >
-        <span style={{ color: "#8b949e" }}>{label}</span>
+        <span style={{ color: CHIP_MUTED_COLOR }}>{label}</span>
         <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
           {Math.round(win.pct)}%
         </span>
@@ -51,7 +55,7 @@ function UsageRow({ label, win }: { label: string; win: UsageWindow }) {
         style={{
           height: 5,
           borderRadius: 3,
-          background: "#30363d",
+          background: CHIP_BORDER_COLOR,
           overflow: "hidden",
           marginTop: 3,
         }}
@@ -60,13 +64,13 @@ function UsageRow({ label, win }: { label: string; win: UsageWindow }) {
           style={{
             height: "100%",
             width: `${filled}%`,
-            background: "#d97757",
+            background: "#d97757", // Claude brand accent (single use)
             borderRadius: 3,
           }}
         />
       </div>
       {win.resetsAt && (
-        <div style={{ color: "#8b949e", fontSize: 11, marginTop: 2 }}>
+        <div style={{ color: CHIP_MUTED_COLOR, fontSize: 11, marginTop: 2 }}>
           resets {fmtReset(win.resetsAt)}
         </div>
       )}
@@ -385,7 +389,7 @@ export function TopBar({
               >
                 <div className="aya-recent-menu-title">Claude — account-wide</div>
                 <div
-                  style={{ color: "#8b949e", fontSize: 12, marginBottom: 10 }}
+                  style={{ color: CHIP_MUTED_COLOR, fontSize: 12, marginBottom: 10 }}
                 >
                   all sessions, not this project
                 </div>
@@ -393,10 +397,10 @@ export function TopBar({
                 <UsageRow label="week" win={usage.sevenDay} />
                 <div
                   style={{
-                    color: "#8b949e",
+                    color: CHIP_MUTED_COLOR,
                     fontSize: 11,
                     marginTop: 10,
-                    borderTop: "1px solid #30363d",
+                    borderTop: `1px solid ${CHIP_BORDER_COLOR}`,
                     paddingTop: 8,
                   }}
                 >
