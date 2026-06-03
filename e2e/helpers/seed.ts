@@ -23,6 +23,10 @@ export interface SeedOptions {
   /** When set, write ayaHome/usage.json so the account-wide usage chip renders
    *  (the file a user hook would normally produce). */
   usage?: Record<string, unknown>;
+  /** When set, write a Codex rollout (under CODEX_HOME = root/codex-home) with a
+   *  token_count event carrying this rate_limits object, so the Codex chip
+   *  renders. */
+  codexRateLimits?: Record<string, unknown>;
 }
 
 /** Build a throwaway, deterministic environment for one Electron launch:
@@ -84,6 +88,18 @@ export function seedEnv(opts: SeedOptions = {}): SeededEnv {
 
   if (opts.usage) {
     writeFileSync(join(ayaHome, "usage.json"), JSON.stringify(opts.usage, null, 2));
+  }
+
+  if (opts.codexRateLimits) {
+    // Mirrors CODEX_HOME (root/codex-home) set by the fixture env.
+    const sessions = join(root, "codex-home", "sessions", "2026", "06", "03");
+    mkdirSync(sessions, { recursive: true });
+    writeFileSync(
+      join(sessions, "rollout-2026-06-03T00-00-00-test.jsonl"),
+      JSON.stringify({
+        payload: { type: "token_count", rate_limits: opts.codexRateLimits },
+      }) + "\n",
+    );
   }
 
   return { root, ayaHome, userDataDir, projectDir, tabIds: { left, right } };

@@ -226,6 +226,8 @@ export interface AyaApi {
 
   /** Read-only account-wide usage snapshot (null when no hook has written it). */
   getUsage(): Promise<UsageData | null>;
+  /** Read-only Codex usage from its local rollout logs (null when none). */
+  getCodexUsage(): Promise<UsageData | null>;
 
   usageHookStatus(): Promise<UsageHookStatus>;
   installUsageHook(): Promise<UsageHookStatus>;

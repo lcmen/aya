@@ -354,6 +354,7 @@ export function App() {
   >({});
   const [git, setGit] = useState<Record<string, GitInfo>>({});
   const [usage, setUsage] = useState<UsageData | null>(null);
+  const [codexUsage, setCodexUsage] = useState<UsageData | null>(null);
   const [newProjectModal, setNewProjectModal] =
     useState<NewProjectModalState | null>(null);
   const [missingDirQueue, setMissingDirQueue] = useState<MissingDirEntry[]>([]);
@@ -411,6 +412,9 @@ export function App() {
     const refresh = () => {
       void window.aya.getUsage().then((u) => {
         if (!cancelled) setUsage(u);
+      });
+      void window.aya.getCodexUsage().then((u) => {
+        if (!cancelled) setCodexUsage(u);
       });
     };
     refresh();
@@ -1897,6 +1901,7 @@ export function App() {
         onOpenSettings={() => setShowSettings(true)}
         projectBadges={projectBadges}
         usage={usage}
+        codexUsage={codexUsage}
       />
       {!didBootstrap ? (
         <main className="aya-empty aya-empty--loading" aria-busy="true">

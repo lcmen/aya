@@ -39,6 +39,9 @@ export const test = base.extend<{
       }
     }
     env.AYA_HOME = seeded.ayaHome;
+    // Isolate Codex usage too: point CODEX_HOME at an empty dir so the Codex
+    // chip never picks up the real machine's ~/.codex rollout logs.
+    env.CODEX_HOME = join(seeded.root, "codex-home");
 
     // Point Electron at the built main entry, NOT the app root: a bare
     // directory arg is interpreted by main.ts as "open this project", which

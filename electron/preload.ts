@@ -40,6 +40,7 @@ const api: AyaApi = {
   saveSnippets: (snippets) => ipcRenderer.invoke("snippets:save", snippets),
 
   getUsage: () => ipcRenderer.invoke("usage:get"),
+  getCodexUsage: () => ipcRenderer.invoke("usage:get-codex"),
   usageHookStatus: () => ipcRenderer.invoke("usage-hook:status"),
   installUsageHook: () => ipcRenderer.invoke("usage-hook:install"),
   uninstallUsageHook: () => ipcRenderer.invoke("usage-hook:uninstall"),
