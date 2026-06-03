@@ -8,7 +8,7 @@
 </div>
 
 <p align="center">
-  <img src="screenshots/hero.png" alt="Aya: the main workspace and the snippets drawer side by side" width="900">
+  <img src="screenshots/hero.png" alt="Aya: the main workspace, with the snippets drawer below" width="900">
 </p>
 
 <p align="center">

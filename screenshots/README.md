@@ -1,11 +1,12 @@
 # Screenshots
 
 `hero.png` is the image referenced from the project README. It is a
-side-by-side composite of `main.png` (the workspace) and
-`snippets-drawer.png` (the snippets drawer open), built with:
+vertical stack of `main.png` (the workspace) above `snippets-drawer.png`
+(the snippets drawer open). Both shots share the same width, so stacking
+needs no padding. Built with:
 
 ```sh
-magick main.png snippets-drawer.png -background "#0d1117" -gravity north +append hero.png
+magick main.png snippets-drawer.png -append hero.png
 ```
 
 To regenerate the source shots `main.png` / `snippets-drawer.png` with
