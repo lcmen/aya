@@ -5,12 +5,15 @@ import {
   type Page,
 } from "@playwright/test";
 import { rmSync } from "node:fs";
+import * as net from "node:net";
 import { join } from "node:path";
 import { seedEnv, type SeededEnv, type SeedOptions } from "./helpers/seed";
 
 const APP_ROOT = join(__dirname, "..");
 const REMOVE_RETRY_COUNT = 5;
 const REMOVE_RETRY_DELAY_MS = 100;
+const PTY_HOST_SHUTDOWN_TIMEOUT_MS = 1_000;
+const APP_PROCESS_EXIT_TIMEOUT_MS = 2_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,6 +35,28 @@ async function removeSeededRoot(root: string): Promise<void> {
       await delay(REMOVE_RETRY_DELAY_MS);
     }
   }
+}
+
+async function shutdownPtyHost(ayaHome: string): Promise<void> {
+  const socketPath = join(ayaHome, "pty-host.sock");
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      const socket = net.createConnection(socketPath);
+      socket.once("connect", () => {
+        socket.end(`${JSON.stringify({ id: 1, type: "shutdown" })}\n`);
+      });
+      socket.once("close", resolve);
+      socket.once("error", resolve);
+    }),
+    delay(PTY_HOST_SHUTDOWN_TIMEOUT_MS),
+  ]);
+}
+
+async function killAndWait(app: ElectronApplication): Promise<void> {
+  const proc = app.process();
+  const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
+  if (!proc.killed) proc.kill("SIGKILL");
+  await Promise.race([exited, delay(APP_PROCESS_EXIT_TIMEOUT_MS)]);
 }
 
 /** Fixtures that launch the built Aya app once per test against an isolated,
@@ -87,12 +112,8 @@ export const test = base.extend<{
 
     const app = await electron.launch({ args: launchArgs, cwd: APP_ROOT, env });
     await use(app);
-    try {
-      app.process().kill("SIGKILL");
-    } catch {
-      /* already gone */
-    }
-    await app.close().catch(() => {});
+    await shutdownPtyHost(seeded.ayaHome);
+    await killAndWait(app);
   },
 
   window: async ({ app }, use) => {
