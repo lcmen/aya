@@ -15,6 +15,12 @@ import { seedEnv } from "./helpers/seed";
 
 const APP_ROOT = join(__dirname, "..");
 const ACTIVE_TAB_PERSISTENCE_TIMEOUT_MS = 5_000;
+const PTY_HOST_SHUTDOWN_TIMEOUT_MS = 1_000;
+const APP_PROCESS_EXIT_TIMEOUT_MS = 2_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function projectStatePath(ayaHome: string): string {
   return join(ayaHome, "projects-state.json");
@@ -78,20 +84,24 @@ async function waitForPersistedActiveTab(
  *  the same AYA_HOME — deterministic replacement for a fixed settle sleep. */
 async function killAndWait(app: ElectronApplication): Promise<void> {
   const proc = app.process();
-  proc.kill("SIGKILL");
-  await new Promise<void>((resolve) => proc.once("exit", () => resolve()));
+  const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
+  if (!proc.killed) proc.kill("SIGKILL");
+  await Promise.race([exited, delay(APP_PROCESS_EXIT_TIMEOUT_MS)]);
 }
 
 async function shutdownPtyHost(ayaHome: string): Promise<void> {
   const socketPath = join(ayaHome, "pty-host.sock");
-  await new Promise<void>((resolve) => {
-    const socket = net.createConnection(socketPath);
-    socket.once("connect", () => {
-      socket.end(`${JSON.stringify({ id: 1, type: "shutdown" })}\n`);
-    });
-    socket.once("close", resolve);
-    socket.once("error", resolve);
-  });
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      const socket = net.createConnection(socketPath);
+      socket.once("connect", () => {
+        socket.end(`${JSON.stringify({ id: 1, type: "shutdown" })}\n`);
+      });
+      socket.once("close", resolve);
+      socket.once("error", resolve);
+    }),
+    delay(PTY_HOST_SHUTDOWN_TIMEOUT_MS),
+  ]);
 }
 
 // Regression guard for #18: the active terminal per project is now persisted
