@@ -11,7 +11,12 @@ import {
   PROJECTS_STATE_FILE,
 } from "./paths";
 import type { ProjectCollectionState, ProjectConfig, SplitLayout } from "./types";
-import { MAX_SPLIT_COLS, MAX_SPLIT_ROWS } from "./validation";
+import {
+  MAX_SPLIT_COLS,
+  MAX_SPLIT_ROWS,
+  PROJECT_STATE_VERSION,
+  sanitizeStringRecord,
+} from "./validation";
 
 const RESERVED_SLUGS = new Set(["aya-sentinel-new"]);
 
@@ -111,14 +116,24 @@ async function loadStringArrayFile(filePath: string): Promise<string[] | null> {
   }
 }
 
-function normalizeProjectState(raw: unknown): ProjectCollectionState | null {
+export function normalizeProjectState(
+  raw: unknown,
+): ProjectCollectionState | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   const order = stringArray(r.order);
   const open = stringArray(r.open);
   const recent = stringArray(r.recent);
   if (!order || !open || !recent) return null;
-  return { version: 1, order, open, recent };
+  return {
+    version: PROJECT_STATE_VERSION,
+    order,
+    open,
+    recent,
+    activeProject: typeof r.activeProject === "string" ? r.activeProject : null,
+    activeTab: sanitizeStringRecord(r.activeTab),
+    singleView: sanitizeStringRecord(r.singleView),
+  };
 }
 
 export async function listProjectState(): Promise<ProjectCollectionState> {
@@ -133,7 +148,12 @@ export async function listProjectState(): Promise<ProjectCollectionState> {
   const order = (await loadStringArrayFile(PROJECTS_ORDER_FILE)) ?? [];
   const open = (await loadStringArrayFile(OPEN_PROJECTS_FILE)) ?? order;
   const recent = order.length > 0 ? order : open;
-  const migrated: ProjectCollectionState = { version: 1, order, open, recent };
+  const migrated: ProjectCollectionState = {
+    version: PROJECT_STATE_VERSION,
+    order,
+    open,
+    recent,
+  };
   if (order.length > 0 || open.length > 0) {
     await saveProjectState(migrated);
   }
@@ -143,11 +163,19 @@ export async function listProjectState(): Promise<ProjectCollectionState> {
 export async function saveProjectState(
   state: ProjectCollectionState,
 ): Promise<void> {
-  const normalized: ProjectCollectionState = {
-    version: 1,
-    order: state.order,
-    open: state.open,
-    recent: state.recent,
+  // Persist through the SAME normalizer the loader uses, so read and write can
+  // never diverge: every field the schema knows about is round-tripped, and no
+  // future field can be silently dropped by a hand-maintained pick list (that
+  // bug — a dropped activeTab/activeProject — is exactly what reset the active
+  // selection on restart, #18).
+  const normalized = normalizeProjectState(state) ?? {
+    version: PROJECT_STATE_VERSION,
+    order: [],
+    open: [],
+    recent: [],
+    activeProject: null,
+    activeTab: {},
+    singleView: {},
   };
   await writeFileAtomic(
     PROJECTS_STATE_FILE,

@@ -18,6 +18,9 @@ import { isSnippet, SNIPPET_TEXT_MAX } from "./snippets";
  *  payloads before any per-item work happens. */
 const SNIPPETS_IPC_MAX = 1_000;
 
+/** Persisted schema version for projects-state.json. */
+export const PROJECT_STATE_VERSION = 1;
+
 /** Maximum split-grid dimensions (rows x cols). Single source of truth for the
  *  split-layout limit — imported by config.ts so the clamp and this validator
  *  enforce the same rule. */
@@ -134,17 +137,39 @@ export function validateProjectConfig(value: unknown): ProjectConfig {
   };
 }
 
+/** A lenient string->string map for optional persisted selections:
+ *  absent or non-object => {}, and any non-string value is dropped. */
+export function sanitizeStringRecord(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (isRecord(value)) {
+    for (const [k, v] of Object.entries(value)) {
+      if (typeof v === "string") out[k] = v;
+    }
+  }
+  return out;
+}
+
 export function validateProjectCollectionState(
   value: unknown,
 ): ProjectCollectionState {
   if (!isRecord(value)) {
     fail("projects:save-state", "ProjectCollectionState object");
   }
+  // The active-selection fields (activeProject / activeTab / singleView) are
+  // optional and validated leniently: the renderer is the source of truth for
+  // them and a malformed entry must never block a save. They are passed through
+  // here so the IPC boundary doesn't silently drop them — dropping them is
+  // exactly the hand-built-subset bug that reset the active terminal on restart
+  // (#18). Read this together with config.ts saveProjectState / normalizeProjectState.
   return {
-    version: 1,
+    version: PROJECT_STATE_VERSION,
     order: requireStringArray(value.order, "projects:save-state.order"),
     open: requireStringArray(value.open, "projects:save-state.open"),
     recent: requireStringArray(value.recent, "projects:save-state.recent"),
+    activeProject:
+      typeof value.activeProject === "string" ? value.activeProject : null,
+    activeTab: sanitizeStringRecord(value.activeTab),
+    singleView: sanitizeStringRecord(value.singleView),
   };
 }
 
