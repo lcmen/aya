@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   type CliStatus,
   type HarnessDef,
@@ -81,6 +81,67 @@ function snippetFromDraft(c: DraftSnippet): Snippet {
     text: c.text,
     autoRun: c.autoRun,
   };
+}
+
+function SettingsIcon({ name, className = "" }: { name: string; className?: string }) {
+  return (
+    <span
+      className={`aya-settings-material ${className}`}
+      style={{ fontFamily: "Material Symbols Outlined" }}
+      aria-hidden="true"
+    >
+      {name}
+    </span>
+  );
+}
+
+function SettingsHeader({
+  icon,
+  title,
+  children,
+}: {
+  icon: string;
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="aya-settings-header">
+      <div className="aya-settings-header-icon">
+        <SettingsIcon name={icon} />
+      </div>
+      <div>
+        <div className="aya-modal-title">{title}</div>
+        {children && <div className="aya-modal-hint">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+function SettingsRow({
+  icon,
+  title,
+  children,
+  control,
+}: {
+  icon: string;
+  title: string;
+  children?: ReactNode;
+  control: ReactNode;
+}) {
+  return (
+    <div className="aya-settings-general-row">
+      <div className="aya-settings-general-copy">
+        <div className="aya-settings-row-icon">
+          <SettingsIcon name={icon} />
+        </div>
+        <div>
+          <div className="aya-settings-general-title">{title}</div>
+          {children && <div className="aya-modal-hint">{children}</div>}
+        </div>
+      </div>
+      <div className="aya-settings-control">{control}</div>
+    </div>
+  );
 }
 
 export function SettingsModal({
@@ -526,12 +587,8 @@ export function SettingsModal({
                 }`}
                 onClick={() => setActiveTab(item.id)}
               >
-                <span
-                  className="aya-settings-tab-icon"
-                  style={{ fontFamily: "Material Symbols Outlined" }}
-                  aria-hidden="true"
-                >
-                  {item.icon}
+                <span className="aya-settings-tab-icon">
+                  <SettingsIcon name={item.icon} />
                 </span>
                 <span>{item.label}</span>
                 {item.dirty && <span className="aya-settings-tab-dirty" />}
@@ -542,13 +599,10 @@ export function SettingsModal({
           <div className="aya-settings-pane-shell">
             {activeTab === "themes" && (
               <section className="aya-settings-pane">
-                {/* === Theme section === */}
-                <div className="aya-modal-title">Terminal theme</div>
-                <div className="aya-modal-hint">
-                  Color scheme for all terminals. Import iTerm2 <code>.itermcolors</code>{" "}
-                  or Windows Terminal JSON files — both are converted to xterm.js's
-                  native format internally.
-                </div>
+                <SettingsHeader icon="palette" title="Themes">
+                  Terminal color schemes, including imported iTerm2 and Windows
+                  Terminal themes.
+                </SettingsHeader>
 
                 <div className="aya-theme-list">
                   {themes.map((t) => (
@@ -571,7 +625,8 @@ export function SettingsModal({
                     </label>
                   ))}
                   <button className="aya-settings-add" onClick={importTheme}>
-                    ＋ Import theme (.itermcolors / .json)
+                    <SettingsIcon name="add" />
+                    Import theme
                   </button>
                   {importError && (
                     <div className="aya-settings-errors" style={{ marginTop: 8 }}>
@@ -584,17 +639,13 @@ export function SettingsModal({
 
             {activeTab === "general" && (
               <section className="aya-settings-pane">
-                {/* === General section === */}
-                <div className="aya-modal-title">General</div>
+                <SettingsHeader icon="tune" title="General" />
                 <div className="aya-settings-general">
-          <div className="aya-settings-general-row">
-            <div>
-              <div className="aya-settings-general-title">Appearance</div>
-              <div className="aya-modal-hint">
-                Follow macOS automatically, or pin Aya to light or dark mode.
-              </div>
-            </div>
-            <div className="aya-settings-segmented" aria-label="Appearance">
+          <SettingsRow
+            icon="contrast"
+            title="Appearance"
+            control={(
+              <div className="aya-settings-segmented" aria-label="Appearance">
               {(["system", "light", "dark"] as const).map((theme) => (
                 <button
                   key={theme}
@@ -615,16 +666,15 @@ export function SettingsModal({
                 </button>
               ))}
             </div>
-          </div>
-          <div className="aya-settings-general-row">
-            <div>
-              <div className="aya-settings-general-title">Mac Option key</div>
-              <div className="aya-modal-hint">
-                Use iTerm-style left Option for Meta while right Option composes
-                accented characters, or make every Option key act as Meta.
-              </div>
-            </div>
-            <div className="aya-settings-segmented" aria-label="Mac Option key">
+            )}
+          >
+            Follow system appearance or pin Aya.
+          </SettingsRow>
+          <SettingsRow
+            icon="keyboard_option_key"
+            title="Mac Option key"
+            control={(
+              <div className="aya-settings-segmented" aria-label="Mac Option key">
               {([
                 ["right-option-compose", "Right Option composes"],
                 ["option-as-meta", "All Option = Meta"],
@@ -644,19 +694,15 @@ export function SettingsModal({
                 </button>
               ))}
             </div>
-          </div>
-          <div className="aya-settings-general-row">
-            <div>
-              <div className="aya-settings-general-title">
-                aya command-line tool
-              </div>
-              <div className="aya-modal-hint">
-                {cliStatus?.installed
-                  ? `Installed at ${cliStatus.path}`
-                  : cliStatus?.message ?? "Not installed"}
-              </div>
-            </div>
-            <button
+            )}
+          >
+            Left Option as Meta, right Option for accents.
+          </SettingsRow>
+          <SettingsRow
+            icon="terminal"
+            title="aya command-line tool"
+            control={(
+              <button
               className="aya-modal-btn"
               onClick={installCli}
               disabled={cliInstalling}
@@ -667,19 +713,17 @@ export function SettingsModal({
                   ? "Reinstall"
                   : "Install"}
             </button>
-          </div>
-          <div className="aya-settings-general-row">
-            <div>
-              <div className="aya-settings-general-title">
-                Claude usage chip
-              </div>
-              <div className="aya-modal-hint">
-                {usageHook?.installed
-                  ? "On — a Claude Code hook updates the account-wide usage chip."
-                  : "Off — shows your account-wide Claude limit (5h + weekly) in the title bar."}
-              </div>
-            </div>
-            <button
+            )}
+          >
+            {cliStatus?.installed
+              ? `Installed at ${cliStatus.path}`
+              : cliStatus?.message ?? "Not installed"}
+          </SettingsRow>
+          <SettingsRow
+            icon="donut_large"
+            title="Claude usage chip"
+            control={(
+              <button
               className="aya-modal-btn"
               onClick={
                 usageHook?.installed
@@ -694,15 +738,17 @@ export function SettingsModal({
                   ? "Disable"
                   : "Enable"}
             </button>
-          </div>
-          <div className="aya-settings-general-row">
-            <div>
-              <div className="aya-settings-general-title">Notifications</div>
-              <div className="aya-modal-hint">
-                macOS permission: {notificationPermission}
-              </div>
-            </div>
-            <button
+            )}
+          >
+            {usageHook?.installed
+              ? "On. Updated by a Claude Code hook."
+              : "Off. Shows account-wide Claude limits."}
+          </SettingsRow>
+          <SettingsRow
+            icon="notifications"
+            title="Notifications"
+            control={(
+              <button
               className="aya-modal-btn"
               onClick={refreshNotificationPermission}
             >
@@ -712,19 +758,19 @@ export function SettingsModal({
                   ? "Enable"
                   : "Enabled"}
             </button>
-          </div>
+            )}
+          >
+            macOS permission: {notificationPermission}
+          </SettingsRow>
                 </div>
               </section>
             )}
 
             {activeTab === "presets" && (
               <section className="aya-settings-pane">
-                {/* === Presets section === */}
-                <div className="aya-modal-title">Terminal presets</div>
-                <div className="aya-modal-hint">
-                  Each preset is a launcher button in the sidebar. The command runs in
-                  your shell in the project directory.
-                </div>
+                <SettingsHeader icon="terminal" title="Presets">
+                  Sidebar launchers for shells and agent CLIs.
+                </SettingsHeader>
 
                 <div className="aya-settings-list">
           <div className="aya-settings-row aya-settings-row--head">
@@ -817,21 +863,24 @@ export function SettingsModal({
           })}
           <div className="aya-settings-add-row">
             <button className="aya-settings-add" onClick={addRow}>
-              ＋ Add preset
+              <SettingsIcon name="add" />
+              Add preset
             </button>
             <button
               className="aya-settings-add aya-settings-add--yolo"
               onClick={addClaudeYolo}
               title="claude --dangerously-skip-permissions"
             >
-              ＋ Claude YOLO
+              <SettingsIcon name="add" />
+              Claude YOLO
             </button>
             <button
               className="aya-settings-add aya-settings-add--yolo"
               onClick={addCodexYolo}
               title="codex --dangerously-bypass-approvals-and-sandbox"
             >
-              ＋ Codex YOLO
+              <SettingsIcon name="add" />
+              Codex YOLO
             </button>
           </div>
 
@@ -855,7 +904,7 @@ export function SettingsModal({
                     >
                       {h.icon}
                     </span>
-                    <span>＋ {h.name}</span>
+                    <span>Add {h.name}</span>
                   </button>
                 ))}
               </div>
@@ -875,28 +924,9 @@ export function SettingsModal({
 
             {activeTab === "snippets" && (
               <section className="aya-settings-pane">
-
-                {/* === Snippets section === */}
-                <div className="aya-modal-title">Snippets</div>
-                <div className="aya-modal-hint">
-          Saved text you can inject into the active terminal from its snippet
-          drawer (the <strong>snippets</strong> button in a pane header). Toggle{" "}
-          <span
-            className="aya-snippet-inline-ico"
-            style={{ color: "var(--aya-term-green)" }}
-          >
-            ▶
-          </span>{" "}
-          to run on send (adds Enter), or{" "}
-          <span
-            className="aya-snippet-inline-ico"
-            style={{ color: "var(--aya-term-yellow)" }}
-          >
-            ⏸
-          </span>{" "}
-          to only type it (you press Enter). Lives in Aya, not in an agent's
-          context.
-                </div>
+                <SettingsHeader icon="bolt" title="Snippets">
+                  Reusable terminal text stored editor-side.
+                </SettingsHeader>
 
                 <div className="aya-settings-list">
           {snippetDraft.map((row) => (
@@ -950,7 +980,8 @@ export function SettingsModal({
           ))}
           <div className="aya-settings-add-row">
             <button className="aya-settings-add" onClick={addSnippetRow}>
-              ＋ Add snippet
+              <SettingsIcon name="add" />
+              Add snippet
             </button>
           </div>
                 </div>

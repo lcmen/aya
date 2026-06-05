@@ -67,6 +67,8 @@ const api: AyaApi = {
   createDir: (p) => ipcRenderer.invoke("env:create-dir", p),
   openPath: (p) => ipcRenderer.invoke("env:open-path", p),
   openUrl: (url) => ipcRenderer.invoke("env:open-url", url),
+  readClipboard: () => ipcRenderer.invoke("env:clipboard-read"),
+  writeClipboard: (text) => ipcRenderer.invoke("env:clipboard-write", text),
 
   isFullScreen: () => ipcRenderer.invoke("app:is-fullscreen"),
   setDockBadge: (text) => ipcRenderer.invoke("app:set-dock-badge", text),

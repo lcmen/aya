@@ -50,3 +50,18 @@ test("Settings can switch the macOS Option key mode", async ({ window, app }) =>
     .poll(() => window.evaluate(() => localStorage.getItem("aya:mac-option-key")))
     .toBe("right-option-compose");
 });
+
+test("Settings uses icon tabs and focused panes", async ({ window, app }) => {
+  await fireShortcut(app, "open-settings");
+  const settings = window.locator(".aya-modal--settings");
+  await expect(settings).toBeVisible();
+
+  await expect(settings.getByTestId("settings-tab")).toHaveCount(4);
+  await expect(settings.locator(".aya-settings-header", { hasText: "General" })).toBeVisible();
+
+  await settings.getByTestId("settings-tab").filter({ hasText: "Snippets" }).click();
+  await expect(settings.locator(".aya-settings-header", { hasText: "Snippets" })).toBeVisible();
+
+  await settings.getByTestId("settings-tab").filter({ hasText: "Presets" }).click();
+  await expect(settings.locator(".aya-settings-header", { hasText: "Presets" })).toBeVisible();
+});

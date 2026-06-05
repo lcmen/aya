@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
 } from "react";
 import { Terminal as XTerm, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -46,6 +47,18 @@ const FOCUS_RETRY_DELAY_MS = 60;
 // arrived (or there was nothing to replay).
 const RESTORE_FALLBACK_MS = 2_500;
 const INPUT_LOG_MAX_CHARS = 240;
+const URL_IN_TEXT_RE = /https?:\/\/[^\s<>"'`]+/i;
+const URL_TRAILING_PUNCTUATION_RE = /[),.;\]]+$/;
+const TERMINAL_CONTEXT_MENU_WIDTH = 170;
+const TERMINAL_CONTEXT_MENU_MAX_HEIGHT = 132;
+const TERMINAL_CONTEXT_MENU_VIEWPORT_MARGIN = 8;
+
+interface TerminalContextMenuState {
+  x: number;
+  y: number;
+  selectedText: string;
+  link: string | null;
+}
 
 interface Props {
   terminal: TerminalState;
@@ -135,6 +148,12 @@ function printableControlData(data: string): string {
     .slice(0, INPUT_LOG_MAX_CHARS);
 }
 
+function firstHttpUrl(text: string): string | null {
+  const match = text.match(URL_IN_TEXT_RE);
+  if (!match) return null;
+  return match[0].replace(URL_TRAILING_PUNCTUATION_RE, "");
+}
+
 export function TerminalView({
   terminal,
   preset,
@@ -187,6 +206,9 @@ export function TerminalView({
   const [isScrollbarHidden, setIsScrollbarHidden] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(
+    null,
+  );
 
   // Write a saved snippet's text into this terminal's PTY. autoRun appends a
   // carriage return so it executes immediately; otherwise we only type the
@@ -332,7 +354,9 @@ export function TerminalView({
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
-    const webLinks = new WebLinksAddon((_e, uri) => {
+    const webLinks = new WebLinksAddon((event, uri) => {
+      event.preventDefault();
+      event.stopPropagation();
       void window.aya.openUrl(uri);
     });
     term.loadAddon(fit);
@@ -731,6 +755,79 @@ export function TerminalView({
     }
   }, [themeColors]);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [contextMenu]);
+
+  const openTerminalContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onActivatePane?.();
+    const selectedText = xtermRef.current?.getSelection() ?? "";
+    const target = event.target instanceof Element ? event.target : null;
+    const rowText =
+      target?.closest(".xterm-rows > div")?.textContent ??
+      target?.closest(".xterm-screen")?.textContent ??
+      "";
+    setContextMenu({
+      x: Math.max(
+        TERMINAL_CONTEXT_MENU_VIEWPORT_MARGIN,
+        Math.min(
+          event.clientX,
+          window.innerWidth -
+            TERMINAL_CONTEXT_MENU_WIDTH -
+            TERMINAL_CONTEXT_MENU_VIEWPORT_MARGIN,
+        ),
+      ),
+      y: Math.max(
+        TERMINAL_CONTEXT_MENU_VIEWPORT_MARGIN,
+        Math.min(
+          event.clientY,
+          window.innerHeight -
+            TERMINAL_CONTEXT_MENU_MAX_HEIGHT -
+            TERMINAL_CONTEXT_MENU_VIEWPORT_MARGIN,
+        ),
+      ),
+      selectedText,
+      link: firstHttpUrl(selectedText) ?? firstHttpUrl(rowText),
+    });
+  };
+
+  const copySelection = async () => {
+    const text = contextMenu?.selectedText || xtermRef.current?.getSelection() || "";
+    if (text) await window.aya.writeClipboard(text);
+    setContextMenu(null);
+    xtermRef.current?.focus();
+  };
+
+  const pasteClipboard = async () => {
+    const text = await window.aya.readClipboard();
+    if (text) xtermRef.current?.paste(text);
+    setContextMenu(null);
+    xtermRef.current?.focus();
+  };
+
+  const selectAllTerminal = () => {
+    xtermRef.current?.selectAll();
+    setContextMenu(null);
+    xtermRef.current?.focus();
+  };
+
+  const openContextLink = () => {
+    if (contextMenu?.link) void window.aya.openUrl(contextMenu.link);
+    setContextMenu(null);
+    xtermRef.current?.focus();
+  };
+
   return (
     <div
       data-testid="terminal-pane"
@@ -836,6 +933,7 @@ export function TerminalView({
             : undefined
         }
         onWheelCapture={() => setIsScrollbarHidden(false)}
+        onContextMenu={openTerminalContextMenu}
       >
         <div data-testid="xterm-frame" className="aya-xterm-frame" ref={containerRef} />
         {isRestoring && (
@@ -850,6 +948,63 @@ export function TerminalView({
           </div>
         )}
       </div>
+      {contextMenu && (
+        <div
+          data-testid="terminal-context-menu"
+          className="aya-terminal-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.link && (
+            <button
+              data-testid="terminal-context-open-link"
+              className="aya-terminal-context-item"
+              type="button"
+              onClick={openContextLink}
+            >
+              <span style={{ fontFamily: "Material Symbols Outlined" }}>
+                open_in_browser
+              </span>
+              Open Link
+            </button>
+          )}
+          <button
+            data-testid="terminal-context-copy"
+            className="aya-terminal-context-item"
+            type="button"
+            disabled={!contextMenu.selectedText}
+            onClick={copySelection}
+          >
+            <span style={{ fontFamily: "Material Symbols Outlined" }}>
+              content_copy
+            </span>
+            Copy
+          </button>
+          <button
+            data-testid="terminal-context-paste"
+            className="aya-terminal-context-item"
+            type="button"
+            onClick={pasteClipboard}
+          >
+            <span style={{ fontFamily: "Material Symbols Outlined" }}>
+              content_paste
+            </span>
+            Paste
+          </button>
+          <button
+            data-testid="terminal-context-select-all"
+            className="aya-terminal-context-item"
+            type="button"
+            onClick={selectAllTerminal}
+          >
+            <span style={{ fontFamily: "Material Symbols Outlined" }}>
+              select_all
+            </span>
+            Select All
+          </button>
+        </div>
+      )}
       <SnippetBar
         snippets={snippets}
         open={snippetsOpen}

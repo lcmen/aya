@@ -4,6 +4,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -873,6 +874,10 @@ function registerIpc(win: BrowserWindow): void {
   });
   ipcMain.handle("env:open-url", async (_e, value: unknown) => {
     await openExternalHttpUrl(requireString(value, "env:open-url.url"));
+  });
+  ipcMain.handle("env:clipboard-read", async () => clipboard.readText());
+  ipcMain.handle("env:clipboard-write", async (_e, value: unknown) => {
+    clipboard.writeText(requireString(value, "env:clipboard-write.text"));
   });
   ipcMain.handle("app:is-fullscreen", async () => win.isFullScreen());
   // Dock badge for unattended notifications (waiting terminals). Empty

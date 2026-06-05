@@ -263,6 +263,8 @@ export interface AyaApi {
   createDir(path: string): Promise<void>;
   openPath(path: string): Promise<void>;
   openUrl(url: string): Promise<void>;
+  readClipboard(): Promise<string>;
+  writeClipboard(text: string): Promise<void>;
 
   isFullScreen(): Promise<boolean>;
   setDockBadge(text: string): Promise<void>;

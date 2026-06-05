@@ -215,6 +215,9 @@ export interface AyaApi {
   openPath(path: string): Promise<void>;
   /** Opens an http/https URL in the OS default browser. */
   openUrl(url: string): Promise<void>;
+  /** Clipboard helpers used by the terminal context menu. */
+  readClipboard(): Promise<string>;
+  writeClipboard(text: string): Promise<void>;
 
   // Window state
   isFullScreen(): Promise<boolean>;
